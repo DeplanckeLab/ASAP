@@ -1,10 +1,10 @@
 ### ASAP Clustering script
-options(echo=TRUE)
+options(echo=F)
 args <- commandArgs(trailingOnly = TRUE)
 
 ### Libraries
-require(jsonlite)
-require(loomR) # For handling Loom files
+suppressPackageStartupMessages(require(jsonlite))
+suppressPackageStartupMessages(source("hdf5_lib.R"))
 
 ### Default Parameters
 set.seed(42)
@@ -199,42 +199,14 @@ sihouette.plot <- function(data.clust.p, data.dist.p){
   data.clust.p[,best.k]
 }
 
-# Open the Loom file while handling potential locking
-open_with_lock <- function(loom_filename, mode) {
-  repeat{ # Handle the lock of the file
-    isLocked <- F
-    tryCatch({
-      data.loom <- connect(filename = loom_filename, mode = mode)
-    }, error = function(err) {
-      if(grepl("unable to lock file", err$message)) isLocked <<- T
-      else error.json(err$message)
-    })
-    if(!isLocked) return(data.loom)
-    else {
-      message("Sleeping 1sec for file lock....")
-      time_idle <<- time_idle + 1
-      Sys.sleep(1)
-    }
-  }
-}
-
-error.json <- function(displayed) {
-  stats <- list()
-  stats$displayed_error = displayed
-  write(toJSON(stats, method="C", auto_unbox=T), file = paste0(output_dir,"/output.json"), append=F)
-  stop(displayed)
-}
-
 ### Open the existing Loom in read-only mode and recuperate the infos (not optimized for OUT-OF-RAM computation)
+to_transpose <- T
+if(startsWith(input_matrix_dataset, "/col_attrs")) to_transpose <- F
 data.loom <- open_with_lock(input_matrix_filename, "r")
-if(!data.loom$exists(input_matrix_dataset)) error.json("This dataset does not exist in the Loom file")
-data.parsed <- data.loom[[input_matrix_dataset]][, ]
-if(!data.loom$exists("/col_attrs/CellID")) error.json("/col_attrs/CellID does not exist in the Loom file (required)")
-data.cell_names <- data.loom[["/col_attrs/CellID"]][ ] 
-data.loom$close_all()
-
-### Transpose the matrix if it is metadata
-if(length(grep(x = input_matrix_dataset, pattern = "col_attrs")) == 0) data.parsed <- t(data.parsed) # t() because loomR returns the t() of the correct matrix we want
+data.parsed <- fetch_dataset(data.loom, input_matrix_dataset, transpose = to_transpose) # If run on dimension reduction (like PCA), then do not transpose the matrix
+data.cell_names <- fetch_dataset(data.loom, "/col_attrs/CellID") # This makes everything stay lock forever
+close_all()
+if(is.null(data.parsed)) error.json("This dataset does not exist in the Loom file")
 
 ### Handle clusters
 if(std_method_name != "seurat"){
@@ -305,7 +277,7 @@ if (std_method_name == "kmeans"){
   if(!all(apply(data.parsed, 2, var, na.rm=TRUE) != 0)) error.json("Cannot rescale a constant/zero column to unit variance. Some Cells have constant/zero variance, SC3 cannot run.")
   
   # Prepare the data (SCE format) assuming the data is log2, to prevent SC3 to further log it
-  data.sc3 <- SingleCellExperiment(assays = list(logcounts = data.parsed))
+  data.sc3 <- SingleCellExperiment(assays = list(logcounts = as.matrix(data.parsed)))
   rowData(data.sc3)$feature_symbol = 1:nrow(data.parsed)
  
   # Starting SC3
@@ -351,10 +323,9 @@ if (std_method_name == "kmeans"){
 } else error.json("This clustering method is not implemented.")
 
 # Open Loom in writing mode for writing results
-data.loom <- open_with_lock(input_matrix_filename, "r+")
-if(data.loom$exists(output_matrix_dataset)) data.loom$link_delete(output_matrix_dataset) # Remove existing dimension reduction with same name
-data.loom[[output_matrix_dataset]] = as.integer(data.out)
-data.loom$close_all()
+data.loom <- open_with_lock(input_matrix_filename, "r+") # I have no clue why it's not properly closed here
+add_array_dataset(handle = data.loom, dataset_path = output_matrix_dataset, dataset_object = data.out, storage.mode_param = "integer")
+close_all()
 
 # Generate default JSON file
 clusts = as.list(table(data.out))

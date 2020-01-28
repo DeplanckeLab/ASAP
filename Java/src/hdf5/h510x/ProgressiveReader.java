@@ -22,13 +22,13 @@ public class ProgressiveReader
 	
 	private long nbGenes = -1;
 	private long nbCells = -1;
-	private int blockSize = -1;
+	private int blockSizeX = -1;
 	public int nbTotalBlocks = -1;
 	
-	public ProgressiveReader(IHDF5Reader reader, long nbGenes, long nbCells, int blockSize) 
+	public ProgressiveReader(IHDF5Reader reader, long nbGenes, long nbCells, int blockSizeX, int blockSizeY) 
 	{
 		this.reader = reader;
-		this.blockSize = blockSize;
+		this.blockSizeX = blockSizeX;
 		this.dataBlockSize = this.reader.getDataSetInformation("/" + Parameters.selection + "/data").tryGetChunkSizes()[0];
 		this.indicesBlockSize = this.reader.getDataSetInformation("/" + Parameters.selection + "/indices").tryGetChunkSizes()[0];
 		this.nbGenes = nbGenes;
@@ -38,7 +38,7 @@ public class ProgressiveReader
 		this.indptr = readLong("/" + Parameters.selection + "/indptr"); // This one should have reasonable size (nb cells), so we load it totally
 		
 		// How many blocks to process?
-		this.nbTotalBlocks = (int)Math.ceil((double)this.nbCells / blockSize);
+		this.nbTotalBlocks = (int)Math.ceil((double)this.nbCells / blockSizeX);
 		System.out.println("Writing & Parsing " + nbTotalBlocks + " independent blocks");
 	}
 	
@@ -55,7 +55,7 @@ public class ProgressiveReader
 	public float[][] readSubMatrix(long start, long end, ParsingJSON json) // From cols start to end && all rows
 	{
 		// Create the submatrix to return
-		float[][] submatrix = new float[(int)this.nbGenes][blockSize];
+		float[][] submatrix = new float[(int)this.nbGenes][blockSizeX];
 			
 		// Fill the dense submatrix with values != 0
 		for(long j = start; j < end; j++) // j varies accross cells ( cols )

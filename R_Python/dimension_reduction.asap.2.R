@@ -4,7 +4,7 @@ args <- commandArgs(trailingOnly = TRUE)
 
 ### Libraries
 require(jsonlite)
-require(loomR) # For handling Loom files
+source("hdf5_lib.R")
 
 ### Default Parameters
 set.seed(42)
@@ -17,14 +17,6 @@ nber_dims <- as.numeric(args[6])
 data.warnings <- NULL
 time_idle <- 0
 
-### Functions
-error.json <- function(displayed) {
-  stats <- list()
-  stats$displayed_error = displayed
-  write(toJSON(stats, method="C", auto_unbox=T), file = paste0(output_dir,"/output.json"), append=F)
-  stop(displayed)
-}
-
 # UMAP
 RunUMAP <- function(data.use, max.dim = 2, n_neighbors = 30, min_dist = 0.3, metric = "correlation") {
   if (!py_module_available(module = 'umap')) error.json("Cannot find UMAP, please install Python package through pip (e.g. pip install umap-learn).")
@@ -34,30 +26,13 @@ RunUMAP <- function(data.use, max.dim = 2, n_neighbors = 30, min_dist = 0.3, met
   return(umap_output)
 }
 
-# Open the Loom file while handling potential locking
-open_with_lock <- function(loom_filename, mode) {
-  repeat{ # Handle the lock of the file
-    isLocked <- F
-    tryCatch({
-      data.loom <- connect(filename = loom_filename, mode = mode)
-    }, error = function(err) {
-      if(grepl("unable to lock file", err$message)) isLocked <<- T
-      else error.json(err$message)
-    })
-    if(!isLocked) return(data.loom)
-    else {
-      message("Sleeping 1sec for file lock....")
-      time_idle <<- time_idle + 1
-      Sys.sleep(1)
-    }
-  }
-}
-
 ### Open the existing Loom in read-only mode and recuperate the infos (not optimized for OUT-OF-RAM computation)
+to_transpose <- T
+if(startsWith(input_matrix_dataset, "/col_attrs")) to_transpose <- F
 data.loom <- open_with_lock(input_matrix_filename, "r")
-if(!data.loom$exists(input_matrix_dataset)) error.json("This dataset does not exist in the Loom file")
-data.parsed <- as.data.frame(t(data.loom[[input_matrix_dataset]][, ])) # t() because loomR returns the t() of the correct matrix we want
-data.loom$close_all()
+data.parsed <- fetch_dataset(data.loom, input_matrix_dataset, transpose = to_transpose) # If run on dimension reduction (like PCA), then do not transpose the matrix
+close_all()
+if(is.null(data.parsed)) error.json("This dataset does not exist in the Loom file")
 
 ### Preprocess the data
 nbNoVar = nrow(data.parsed)
@@ -65,6 +40,9 @@ data.parsed <- data.parsed[apply(data.parsed, 1, var, na.rm=TRUE) != 0,] # Remov
 nbNoVar = nbNoVar - nrow(data.parsed)
 message("Removed ", nbNoVar, " rows without variation.")
 if(ncol(data.parsed) < nber_dims | nrow(data.parsed) < nber_dims) error.json(paste0("Your matrix is too small to run the dimension reduction (less dimensions that the nb dims requested: ",nber_dims,")"))
+
+### Remove duplicates
+#data.parsed <- data.parsed[,!duplicated(t(data.parsed))]
 
 ### Run dimension reduction std_method_name
 if (std_method_name == "pca"){ # default []
@@ -105,7 +83,7 @@ if (std_method_name == "pca"){ # default []
   else thet <- 0.5
   
   tryCatch({
-    data.tsne <<- Rtsne(t(data.parsed), dims = nber_dims, theta = thet, pca = FALSE, check.duplicates = F, perplexity = perp)
+    data.tsne <<- Rtsne(t(data.parsed), dims = nber_dims, theta = thet, check.duplicates = F, perplexity = perp)
   }, error = function(err) {
     if(grepl("Remove duplicates", err$message)) error.json("[Rtsne ERROR] Remove duplicates before running t-SNE")
     error.json(err$message)
@@ -143,9 +121,8 @@ if (std_method_name == "pca"){ # default []
 
 # Open Loom in writing mode for writing results
 data.loom <- open_with_lock(input_matrix_filename, "r+")
-if(data.loom$exists(output_matrix_dataset)) data.loom$link_delete(output_matrix_dataset) # Remove existing dimension reduction with same name
-data.loom[[output_matrix_dataset]] = t(data.out)
-data.loom$close_all()
+add_matrix_dataset(handle = data.loom, dataset_path = output_matrix_dataset, dataset_object = t(data.out))
+close_all()
 
 # Generate default JSON file
 stats <- list()

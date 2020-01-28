@@ -44,7 +44,7 @@ public class H510xHandler
 		return true;
 	}
 	
-	private static StringArray64 readStringArray(IHDF5Reader reader, String path)
+	private static StringArray64 readStringArray(IHDF5Reader reader, String path) // Because it is not a Loom file
 	{
 		if(reader == null) new ErrorJSON("Please open the HDF5 file first");
 		long length = reader.getDataSetInformation(path).getDimensions()[0];
@@ -85,12 +85,11 @@ public class H510xHandler
 			json.data.is_count_table = true; // It is always count data from 10x datasets
 			
 			// Prepare the writing in the file
-			int blockSize = 1000; // Read 1000 cells by 1000 cells
-			// Since this format is not compatible with our chunking specs, we first create a 1000x1000 chunked matrix
-			json.loom.createEmptyMatrix(json.data.gene_names.size(), json.data.cell_names.size(), blockSize);
+			// Since this format is not compatible with our chunking specs, we first create a chunked matrix
+			json.loom.createEmptyFloat32MatrixDataset("/matrix", json.data.nber_genes, json.data.nber_cells, Parameters.defaultChunkX, Parameters.defaultChunkY);
 			
 			// Now read the file block per block (1000 cells at a time, all genes)
-			ProgressiveReader pr = new ProgressiveReader(reader, json.data.nber_genes, json.data.nber_cells, blockSize);
+			ProgressiveReader pr = new ProgressiveReader(reader, json.data.nber_genes, json.data.nber_cells, Parameters.defaultChunkX, Parameters.defaultChunkY);
 			
 			// Use indptr to compute the number of detected genes
 			for(int i = 0; i < pr.indptr.size() - 1; i++) json.data.detected_genes.set(i, (int)(pr.indptr.get(i + 1) - pr.indptr.get(i)));
@@ -101,19 +100,17 @@ public class H510xHandler
 				//System.out.println("Block " + (nbBlocks + 1));
 				
 				// First find out the index of the columns
-				long k = (nbBlocks + 1) * blockSize;
+				long k = (nbBlocks + 1) * Parameters.defaultChunkX;
 				if( k > json.data.nber_cells) k = json.data.nber_cells;
 				
 				// Then extract the necessary data (& convert to dense matrix in the process)
-				float[][] subMatrix = pr.readSubMatrix(nbBlocks * blockSize, k, json);
+				float[][] subMatrix = pr.readSubMatrix(nbBlocks * Parameters.defaultChunkX, k, json);
 						
 				// Writing this merged block to output
-				json.loom.writeBlockInCustomChunkedMatrix(subMatrix, nbBlocks);
+				json.loom.writeFloatBlockDataset("/matrix", subMatrix, 0, nbBlocks);
 			}
 			
 			json.loom.resizeDataset("/matrix", json.data.nber_genes, json.data.nber_cells); // Cause writing fixed-size blocks can extend the matrix size with 0
-			
-			//json.loom.reChunkMatrix(1, json.loom.nber_cells); // Because the current 'chunking' is different from what we want
 			
 			long nbNonZeroValues = reader.getDataSetInformation("/" + Parameters.selection + "/data").getDimensions()[0]; // Know the actual size of the array
 
@@ -161,7 +158,7 @@ public class H510xHandler
         	g.cellNames = reader.string().readArrayBlock("/" + group + "/barcodes", 10, 0);
         	for (int i = 0; i < g.cellNames.length; i++) g.cellNames[i] = g.cellNames[i].replaceAll("\"", "");
         	
-			if(reader.object().isDataSet("/" + Parameters.selection + "/gene_names")) g.geneNames = reader.string().readArrayBlock("/" + group + "/gene_names", 10, 0); // scRNA-seq
+			if(reader.object().isDataSet("/" + group + "/gene_names")) g.geneNames = reader.string().readArrayBlock("/" + group + "/gene_names", 10, 0); // scRNA-seq
 			else g.geneNames = reader.string().readArrayBlock("/" + group + "/features/id", 10, 0); // scATAC-seq
 			for (int i = 0; i < g.geneNames.length; i++) g.geneNames[i] = g.geneNames[i].replaceAll("\"", "");
         	reader.close();

@@ -1,31 +1,26 @@
 package hdf5.loom;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 
 import bigarrays.DoubleArray64;
 import bigarrays.FloatArray64;
 import bigarrays.IntArray64;
 import bigarrays.LongArray64;
 import bigarrays.StringArray64;
-import model.ERCC;
 import model.Metadata;
 
 public class LoomData 
 {
 	public ArrayList<Metadata> meta = null;
-	public HashSet<Long> removed = null; // If some rows of the main matrix were removed
-	
+
 	// Summary infos
 	public long nber_cells = 0;
 	public long nber_genes = 0;
 	public long nber_not_found_genes = 0;
-	public long nber_ercc = 0;
 	public boolean is_count_table = true;
 	public long nber_zeros = 0;
 	
 	// Main dataset
-	public ERCC erccs;
 	public StringArray64 gene_names = null; // Not initialized by default
 	public StringArray64 ens_names = null; // Not initialized by default
 	public StringArray64 cell_names;
@@ -42,16 +37,9 @@ public class LoomData
 	public FloatArray64 ribosomalContent; // Number of read per biotype per cell
 	public FloatArray64 proteinCodingContent; // Number of read per biotype per cell
 	public FloatArray64 mitochondrialContent; // Number of read per chromosome per cell
-	
-	public IntArray64 __no_feature = null; // Not initialized
-	public IntArray64 __ambiguous = null; // Not initialized
-	public IntArray64 __too_low_aQual = null; // Not initialized
-	public IntArray64 __not_aligned = null; // Not initialized
-	public IntArray64 __alignment_not_unique = null; // Not initialized
-	
+		
 	public LoomData(long nbGenes, long nbCells) 
 	{
-		this.removed = new HashSet<Long>();
 		this.meta = new ArrayList<Metadata>();	
 		this.nber_genes = nbGenes;
 		this.nber_cells = nbCells;

@@ -23,11 +23,7 @@ public class DE
 		
     	// Open Loom file in read-only
     	loom = new LoomFile("r", Parameters.loomFile);
-    	if(!loom.isLoomFormatOK())
-    	{
-    		loom.close();
-    		new ErrorJSON("The Loom file at " + Parameters.loomFile + " does not appear to be a correct Loom format");
-    	}
+    	loom.checkLoomFormat();
     	
     	// Run DE
 		System.out.println("Performing DE on file : " + Parameters.loomFile);
@@ -104,7 +100,7 @@ public class DE
 		for(int nbBlocks = 0; nbBlocks < nbTotalBlocks; nbBlocks++)
 		{		
 			// Retrieve the blocks that will contain all columns (because we write gene by gene)
-			float[][] subMatrix = loom.readBlock(blockSize[0], (int)dim[1], nbBlocks);
+			float[][] subMatrix = loom.readFloatBlock("/matrix", blockSize[0], (int)dim[1], nbBlocks, 0l);
 			
 			// Parsing Data and generating summary annotations
 			for(int x = 0; x < subMatrix.length; x++)
@@ -151,7 +147,7 @@ public class DE
 		loom.close();
 		
 		// Write results
-		loom = new LoomFile("w+", Parameters.loomFile);
+		loom = new LoomFile("r+", Parameters.loomFile);
 		loom.writeMatrixMetadata(Parameters.oAnnot, Utils.t(results));
 		
 		// Return nbGenes (can be filtered)

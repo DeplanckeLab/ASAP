@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 
+import enrichment.GeneSet;
 import json.ErrorJSON;
 import model.MapGene;
 import parsing.model.Gene;
@@ -18,20 +19,151 @@ public class DBManager
 	public static String URL = null;
 	public static Connection conn = null;
 	
-	public static void generateEnrichmentDB()
+	public static HashMap<Integer, Integer> listAllOrganisms() 
 	{
-			/*DrugBankParser.parse("hsa", "C:/Users/gardeux/Dropbox/GeneSets/DrugBank/drugbank.xml", "C:/Users/gardeux/Dropbox/ASAP/Scripts/Enrichment/Genesets/drugbank_hsa.gmt");
-			DrugBankParser.parse("mmu", "C:/Users/gardeux/Dropbox/GeneSets/DrugBank/drugbank.xml", "C:/Users/gardeux/Dropbox/ASAP/Scripts/Enrichment/Genesets/drugbank_mmu.gmt");
-			KEGGRestApi.generateKEGGDB("hsa", "C://Users/Vincent/Dropbox/ASAP/Scripts/Enrichment/Genesets/kegg_hsa.gmt"); // mmu, rno (rat), dme (droso mela)
-			KEGGRestApi.generateKEGGDB("mmu", "C://Users/Vincent/Dropbox/ASAP/Scripts/Enrichment/Genesets/kegg_mmu.gmt"); // mmu, rno (rat), dme (droso mela)
-			GeneAtlas.enrichrToGMT("C:/Users/Vincent/Desktop/GeneSets/GeneAtlas/Human_Gene_Atlas.txt", "C://Users/Vincent/Dropbox/ASAP/Scripts/Enrichment/Genesets/gene_atlas.hsa.gmt");
-			GeneAtlas.enrichrToGMT("C:/Users/Vincent/Desktop/GeneSets/GeneAtlas/Mouse_Gene_Atlas.txt", "C://Users/Vincent/Dropbox/ASAP/Scripts/Enrichment/Genesets/gene_atlas.mmu.gmt");
-			//GODatabase.generateGODB("C:/Users/gardeux/Dropbox/ASAP/Scripts/Enrichment/Genesets/", "hsa");
-			//GODatabase.generateGODB("C:/Users/gardeux/Dropbox/ASAP/Scripts/Enrichment/Genesets/", "mmu");*/
-			//GODatabase.generateGODB(Parameters.outputFolder, Parameters.taxon);
+		HashMap<Integer, Integer> taxToIdMap = new HashMap<>();
+		Statement stmt = null;
+		try
+		{
+			stmt = conn.createStatement();
+			String sql = "SELECT id,tax_id FROM organisms WHERE tax_id IS NOT NULL";
+			
+			ResultSet rs = stmt.executeQuery(sql);
+			
+			
+			int c = 0;
+			// List the results
+			while(rs.next())
+			{
+				c++;
+				int taxId = rs.getInt("tax_id");
+				int id = rs.getInt("id");
+				taxToIdMap.put(taxId, id);
+			}
+
+			System.out.println(c);
+			stmt.close();
+
+			return taxToIdMap;
+		}
+		catch(Exception e)
+		{
+			e.printStackTrace();
+		}
+		finally
+		{
+			try
+			{
+				if(stmt!=null) stmt.close();
+			}
+			catch(SQLException se2){ }// nothing we can do
+		}
+		return null;
 	}
 	
-	public static int getTaxonFromOrganismID(int organism_id) 
+	
+	public static int getOrganismFromGeneSets(int geneset_id) 
+	{
+		Statement stmt = null;
+		try
+		{
+			stmt = conn.createStatement();
+			
+			String sql = "SELECT organism_id FROM gene_sets WHERE id="+geneset_id;
+			ResultSet rs = stmt.executeQuery(sql);
+			int res = -1;
+			boolean found = rs.next();
+			if(found) 
+			{
+				res = rs.getInt("organism_id");
+			}
+			stmt.close();
+			if(!found) new ErrorJSON("This geneset with id=" + geneset_id + " is not in DB");
+			if(res == 0 || res == -1) new ErrorJSON("No organism available for geneset_id id=" + geneset_id);
+			return res;
+		}
+		catch(Exception e)
+		{
+			e.printStackTrace();
+		}
+		finally
+		{
+			try
+			{
+				if(stmt!=null) stmt.close();
+			}
+			catch(SQLException se2){ }// nothing we can do
+		}
+		return -1;
+	}
+	
+	public static void ListGeneSets(int organism_id) 
+	{
+		Statement stmt = null;
+		try
+		{
+			stmt = conn.createStatement();
+			String sql = "SELECT id FROM gene_sets WHERE organism_id="+organism_id;
+			ResultSet rs = stmt.executeQuery(sql);
+			while(rs.next()) System.out.println(rs.getInt("id"));
+			stmt.close();
+		}
+		catch(Exception e)
+		{
+			e.printStackTrace();
+		}
+		finally
+		{
+			try
+			{
+				if(stmt!=null) stmt.close();
+			}
+			catch(SQLException se2){ }// nothing we can do
+		}
+	}
+				
+	public static ArrayList<GeneSet> getGeneSets(int geneset_id) 
+	{
+		ArrayList<GeneSet> res = new ArrayList<GeneSet>();
+		Statement stmt = null;
+		try
+		{	
+			stmt = conn.createStatement();
+			String sql = "SELECT identifier,name,content FROM gene_set_items WHERE gene_set_id="+geneset_id;
+			ResultSet rs = stmt.executeQuery(sql);
+			
+			// I go through the results
+			while(rs.next())
+			{
+				GeneSet g = new GeneSet();
+				g.name = rs.getString("name");
+				g.identifier = rs.getString("identifier");
+				
+				String[] ids = rs.getString("content").split(",");
+				g.content = new HashSet<Long>();
+				for(int i = 0;i < ids.length; i++) if(!ids[i].equals("")) g.content.add(Long.parseLong(ids[i])); // They all should be Long
+
+				res.add(g);
+			}
+			
+			stmt.close();
+		}
+		catch(Exception e)
+		{
+			e.printStackTrace();
+		}
+		finally
+		{
+			try
+			{
+				if(stmt!=null) stmt.close();
+			}
+			catch(SQLException se2){ }// nothing we can do
+		}
+		return res;
+	}
+	
+	public static int getTaxonFromOrganismID(int organism_id)
 	{
 		Statement stmt = null;
 		try
@@ -355,6 +487,40 @@ public class DBManager
 		return 0; // first available is 43 (and this is the answer to everything anyway...)
 	}
 	
+	public static HashMap<String, Long> getGenesInDBByID(int organismID)
+	{
+		HashMap<String, Long> genes = new HashMap<String, Long>();
+		
+		// I perform my request
+		Statement stmt = null;
+		try
+		{
+			stmt = conn.createStatement();
+		
+			String sql = "SELECT id,ensembl_id FROM genes WHERE organism_id="+organismID; // Restrict to genes of this organism
+			ResultSet rs = stmt.executeQuery(sql);
+			 
+			// I check the results and compare to my gene list
+			while(rs.next())
+			{
+				genes.put(rs.getString("ensembl_id"), rs.getLong("id"));
+			}
+		}
+		catch(Exception e)
+		{
+			e.printStackTrace();
+		}
+		finally
+		{
+			try
+			{
+				if(stmt!=null) stmt.close();
+			}
+			catch(SQLException se2){ }// nothing we can do
+		}
+		return genes;
+	}
+	
 	public static HashMap<String, Gene> getGenesInDBByEnsemblID(int organismID)
 	{
 		HashMap<String, Gene> genes = new HashMap<>();
@@ -441,16 +607,16 @@ public class DBManager
 				g.latest_ensembl_release = rs.getInt("latest_ensembl_release");
 				
 				// I add this gene in the HashMap. By ensembl_id ...
-				ArrayList<Gene> gene_list = MapGene.ensembl_db.get(g.ensembl_id);
+				ArrayList<Gene> gene_list = MapGene.ensembl_db.get(g.ensembl_id.toUpperCase());
 				if(gene_list == null) gene_list = new ArrayList<>();
 				gene_list.add(g);
-				MapGene.ensembl_db.put(g.ensembl_id, gene_list);
+				MapGene.ensembl_db.put(g.ensembl_id.toUpperCase(), gene_list);
 				
 				// ... and once the gene name
-				gene_list = MapGene.gene_db.get(g.name);
+				gene_list = MapGene.gene_db.get(g.name.toUpperCase());
 				if(gene_list == null) gene_list = new ArrayList<>();
 				gene_list.add(g);
-				MapGene.gene_db.put(g.name, gene_list);
+				MapGene.gene_db.put(g.name.toUpperCase(), gene_list);
 					
 				// ... and for every alt names
 				String alt_names = rs.getString("alt_names");
@@ -460,10 +626,24 @@ public class DBManager
 					for(String gene:tokens)
 					{
 						g.alt_names.add(gene);
-						gene_list = MapGene.alt_db.get(gene);
+						gene_list = MapGene.alt_db.get(gene.toUpperCase());
 						if(gene_list == null) gene_list = new ArrayList<>();
 						gene_list.add(g);
-						MapGene.alt_db.put(gene, gene_list);
+						MapGene.alt_db.put(gene.toUpperCase(), gene_list);
+					}
+				}
+				
+				// ... and for every obsolete alt names
+				String obsolete_alt_names = rs.getString("obsolete_alt_names");
+				if(obsolete_alt_names != null)
+				{
+					String[] tokens = obsolete_alt_names.split(",");
+					for(String gene:tokens)
+					{
+						gene_list = MapGene.obsolete_db.get(gene.toUpperCase());
+						if(gene_list == null) gene_list = new ArrayList<>();
+						gene_list.add(g);
+						MapGene.obsolete_db.put(gene.toUpperCase(), gene_list);
 					}
 				}
 			}
@@ -487,9 +667,9 @@ public class DBManager
 		try
 		{
 			Class.forName(JDBC_DRIVER);
-			System.out.println("Connecting to database: " + URL);
+			//System.out.println("Connecting to database: " + URL);
 			conn = DriverManager.getConnection(URL);
-			System.out.println("Connected!");
+			//System.out.println("Connected!");
 		}
 		catch(Exception e)
 		{

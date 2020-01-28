@@ -1,39 +1,22 @@
 package enrichment;
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.Writer;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.stream.JsonReader;
-
+import bigarrays.StringArray64;
+import db.DBManager;
+import enrichment.model.EnrichmentJSON;
+import enrichment.model.ResultSet;
+import hdf5.loom.LoomFile;
 import jsc.contingencytables.ContingencyTable2x2;
 import jsc.contingencytables.FishersExactTest;
+import json.ErrorJSON;
 import model.Parameters;
 import tools.Utils;
 
 public class Enrichment 
 {
-	// Pathway data
-	private static HashMap<String, Pathway> data_pathways = new HashMap<String, Pathway>();
-	
-	// Annotation Data
-	//private static HashMap<String, Gene> ensToGene = new HashMap<String, Gene>();
-	private static HashMap<String, Boolean> backgroundGenes = new HashMap<String, Boolean>(); // ID = Gene Name
-	
-	// Gene list to enrich
-	private static HashSet<String> genesToEnrich = new HashSet<String>();
-	
-	// Potential warning message
-	private static String warningMess = null;
-	
-	public static void readFiles()
+	/*public static void readFiles()
 	{
 		long t1 = System.currentTimeMillis();
 		
@@ -61,92 +44,153 @@ public class Enrichment
 		warningMess = "After filtering out genes not present in pathway file: "+genesToEnrich.size()+" genes remain to be enriched.";
 		
 		if(!Parameters.isSilent) System.out.println("Loading file time: "+Utils.toReadableTime(System.currentTimeMillis() - t1));
-	}
+	}*/
 	
 	/**
-	 * Enrichment main function (computes the p-values for a given list of pathways)
-	 * @param toto This is a toto!
-	 */
+	 * Enrichment main function (computes the Fisher's Exact Test p-values for a given list of genesets)
+	 */	
 	public static void runEnrichment()
 	{
-		long t1 = System.currentTimeMillis();
-		// Initialization
-		File folder = new File(Parameters.outputFolder); // This should be a folder specified, not a single file
-		if(folder.exists() && !folder.isDirectory())
-		{
-			System.err.println("The Output folder specified is not a folder.\nStopping program...");
-			System.exit(-1);
-		}
-		if(!Parameters.isSilent) System.out.println("\n" + Parameters.enrichModel.toString() + " model is used.\n");
+		// TODO if project id in geneset, then it's a personal genset with stable_ids, not DB ids
+		// TODO what if there is only one geneset. Background should not be equal to only these genes... Create a case then
 		
-		// Running Enrichment for each pathway
-		ResultSet res = new ResultSet();
-		res.init(data_pathways.size());
-		int k = 0;
-		if(!Parameters.isSilent) System.out.println("Computing the scores for each pathway...");
-		switch(Parameters.enrichModel)
+		// Fetching DB
+		DBManager.connect();
+		ArrayList<GeneSet> genesets = DBManager.getGeneSets(Parameters.geneset_id);
+		int organism_id = DBManager.getOrganismFromGeneSets(Parameters.geneset_id);
+		HashMap<String, Long> genes = DBManager.getGenesInDBByID(organism_id);
+		//System.out.println(genes.size() + " genes were fetched in DB");
+		DBManager.disconnect();
+		//System.out.println(genesets.size() + " genesets were found in ASAP DB for id == " + Parameters.geneset_id);
+		if(genesets.size() == 0) new ErrorJSON("No genesets in DB corresponding to this id", Parameters.JSONFileName);
+		HashSet<Long> genesInGenesets = new HashSet<Long>();
+		for(GeneSet g:genesets) for(long gene:g.content) genesInGenesets.add(gene);
+		//System.out.println(genesInGenesets.size() + " unique genes in selected geneset");
+		
+    	// Open Loom file in read-only
+    	LoomFile loom = new LoomFile("r", Parameters.loomFile);
+    	loom.checkLoomFormat();
+    	StringArray64 ens_ids = loom.readStringArray("/row_attrs/Accession");
+		if(ens_ids == null) new ErrorJSON("No Ensembl Ids in Loom file.", Parameters.JSONFileName);
+    	//System.out.println(ens_ids.size() + " genes found in the Loom file");
+    	loom.close();
+    	
+    	HashMap<String, Long> dbIDByEnsemblId = new HashMap<String, Long>();
+		for(String ens:ens_ids) 
 		{
-		case FET:
-			for (String path:data_pathways.keySet()) 
+			Long id = genes.get(ens);
+			if(id != null && genesInGenesets.contains(id)) dbIDByEnsemblId.put(ens, id);
+		}
+    	
+		//System.out.println(dbIDByEnsemblId.size() + " unique genes left after overlap with background + Loom file (by EnsemblIds)");
+		if(dbIDByEnsemblId.size() == 0) new ErrorJSON("No gene in the Loom file matches Ensembl Ids in the database. Nothing to enrich.", Parameters.JSONFileName);
+		
+		// Getting JSON containing the list(s) of genes to enrich 
+		EnrichmentJSON json = EnrichmentJSON.parseJSON(Parameters.fileName);
+		
+		// Running enrichment
+    	HashMap<String,  ArrayList<ResultSet>> listRes = new HashMap<String,  ArrayList<ResultSet>>();
+		if(json.down != null) listRes.put("down", enrich(loomIndexesToDBIds(json.down, dbIDByEnsemblId, ens_ids), genesets, dbIDByEnsemblId));
+		if(json.up != null) listRes.put("up", enrich(loomIndexesToDBIds(json.up, dbIDByEnsemblId, ens_ids), genesets, dbIDByEnsemblId));
+		if(json.indexes_match != null) listRes.put("indexes_match", enrich(loomIndexesToDBIds(json.indexes_match, dbIDByEnsemblId, ens_ids), genesets, dbIDByEnsemblId));
+    	
+		// Prepare output String
+		StringBuilder sb = new StringBuilder();
+    	sb.append("{").append("\"time_idle\":").append(Parameters.idleTime);
+    	sb.append(",\"headers\":[\"name\",\"description\",\"p-value\",\"").append(Parameters.adjMethod).append("\",\"effect size\",\"size geneset\",\"overlap w/ genes\"]");
+		
+		// Go through the results and create the output String
+		for(String key:listRes.keySet())
+		{
+			sb.append(",\"").append(key).append("\":[");
+			ArrayList<ResultSet> res = listRes.get(key);
+			
+			// First loop to get all pvalues and adjust
+			double[] pvalues = new double[res.size()];
+			for(int i = 0; i < pvalues.length; i++) pvalues[i] = res.get(i).p_value;
+			double[] adj_p_value = Utils.p_adjust(pvalues, Parameters.adjMethod);
+			int[] sortedIndexes = Utils.order(pvalues, false);
+			
+			// Second loop to generate the JSON file
+			String prefix = "";
+			for(int i:sortedIndexes)
 			{
-				Pathway p = data_pathways.get(path);
-				res.pathways[k] = p.id;
-				res.descriptions[k] = p.description;
-				res.urls[k] = p.url;
-				int overlap = 0;
-				for(String gene:p.listGenes)
-				{
-					for(String g:genesToEnrich)
+				ResultSet enrichRes = res.get(i);
+				sb.append(prefix).append("[\"").append(enrichRes.name).append("\"");
+				sb.append(",\"").append(enrichRes.description).append("\"");
+				sb.append(",").append(enrichRes.p_value);
+				sb.append(",").append(adj_p_value[i]);
+				sb.append(",").append((enrichRes.effect_size == Double.MAX_VALUE)?"\"Inf\"":enrichRes.effect_size);
+				sb.append(",").append(enrichRes.size);
+				sb.append(",").append(enrichRes.overlap);
+				sb.append("]");
+				prefix = ",";
+			} 
+			sb.append("]");
+		}
+		sb.append("}");
+		
+    	// Write output.json
+    	Utils.writeJSON(sb, Parameters.JSONFileName);
+	}
+	
+	private static HashSet<Long> loomIndexesToDBIds(long[] loomIdx, HashMap<String, Long> dbIDByEnsemblId, StringArray64 ens_ids)
+	{
+		HashSet<Long> res = new HashSet<Long>();
+		for(long idx:loomIdx)
+		{
+			String ensemblId = ens_ids.get(idx);
+			if(ensemblId != null)
+			{
+				Long id = dbIDByEnsemblId.get(ensemblId);
+				if(id != null) res.add(id);
+			}
+		}
+		return res;
+	}
+	
+	private static ArrayList<ResultSet> enrich(HashSet<Long> indexesInLoom, ArrayList<GeneSet> genesets, HashMap<String, Long> backgroundMap)
+	{
+		HashSet<Long> background = new HashSet<Long>();
+		for(String key:backgroundMap.keySet()) background.add(backgroundMap.get(key));
+		int indexesInLoomAndBackground = 0;
+		for(Long idx:indexesInLoom) if(background.contains(idx)) indexesInLoomAndBackground++;
+		//System.out.println("Performing Functional Enrichment on " + indexesInLoom.size() + " genes");
+		ArrayList<ResultSet> res = new ArrayList<ResultSet>();
+		for(GeneSet g:genesets)
+		{
+			ResultSet gRes = new ResultSet();
+			switch(Parameters.enrichModel) 
+			{
+				case FET:
+					gRes.name = g.identifier;
+					gRes.description = g.name;
+					int overlap = 0;
+					int genesetSize = 0;
+					for(long gene:g.content) 
 					{
-						if(gene.equals(g)) overlap++;
+						if(background.contains(gene))
+						{
+							genesetSize++;
+							if(indexesInLoom.contains(gene)) overlap++;
+						}
 					}
-				}
-				double[] resFet = doFExactTest(overlap, p.listGenes.size() - overlap, genesToEnrich.size() - overlap, backgroundGenes.size() - p.listGenes.size() - genesToEnrich.size() + overlap);
-				res.p_value[k] = resFet[0];
-				res.OR[k] = resFet[1];
-				k++;
+					if(genesetSize >= Parameters.minGenesInPathway && genesetSize <= Parameters.maxGenesInPathway) // Process only these
+					{
+						double[] resFet = doFExactTest(overlap, genesetSize - overlap, indexesInLoomAndBackground - overlap, background.size() - genesetSize - indexesInLoomAndBackground + overlap);
+						gRes.overlap = overlap;
+						gRes.p_value = resFet[0];
+						gRes.effect_size = resFet[1];
+						gRes.size = genesetSize;
+						res.add(gRes);
+					}
+					break;
+				default:
+					new ErrorJSON("This model is not yet implemented", Parameters.JSONFileName);
 			}
-			break;
-		default:
-			System.err.println("This model is not yet implemented.");
-			System.exit(-1);
-			break;
+			
 		}
-		// Adjust P-values (all of them need to be computed to do so)
-		res.adj_p_value = Utils.p_adjust(res.p_value, Parameters.adjMethod);
-		res.warning = Enrichment.warningMess;
-		// Filtering Results
-		int filtered = 0;
-		ResultSet res_filtered = new ResultSet();
-		for(int i = 0; i < data_pathways.size(); i++) if(res.adj_p_value[i] <= Parameters.probaCutoff) filtered++;
-		System.out.println(filtered + " values passed the " + (Parameters.probaCutoff * 100) + "% threshold after p-value adjustment");
-		res_filtered.init(filtered);
-		int index = 0;
-		for(int i = 0; i < data_pathways.size(); i++)
-		{
-			if(res.adj_p_value[i] <= Parameters.probaCutoff)
-			{
-				res_filtered.clone(res, i, index);
-				index ++;
-			}
-		}
-		// Writing Results
-		if(!Parameters.isSilent) System.out.println("Writing the result file...");
-		try
-		{
-			Writer writer = new FileWriter(Parameters.outputFolder + "output.json");
-			Gson gson = new GsonBuilder().create();
-			gson.toJson(res_filtered, writer);
-			writer.close();
-		}
-		catch(Exception e)
-		{
-			System.err.println("Problem detected when writing the JSON result file. Stopping program...");
-			System.exit(-1);
-		}
-		if(!Parameters.isSilent) System.out.println("Computation Done!");
-		
-		if(!Parameters.isSilent) System.out.println("Score & Writing computation time: "+ Utils.toReadableTime(System.currentTimeMillis() - t1));
+		return res;
 	}
 	
     private static double[] doFExactTest(int a, int b, int c, int d) // res[0] = pvalue, res[1] = OR
@@ -205,163 +249,9 @@ public class Enrichment
         }
 		return res;
 	}*/
-	
-	private static void loadGeneListJSON(String fileName) // JSON file
-	{
-		try
-		{
-			Gson gson = new Gson();
-			JsonReader reader = new JsonReader(new FileReader(fileName));
-			String[][] listGenes = gson.fromJson(reader, String[][] .class); // contains the whole genes lists
-			for (int i = 0; i < listGenes.length; i++) 
-			{
-				for (int j = 0; j <3; j++) // I know there are only three categories
-				{
-					String[] gene = listGenes[i][j].split(",");
-					for(String g:gene)
-					{
-						String ge = g.toUpperCase();
-						if(backgroundGenes.get(ge) != null)
-						{
-							backgroundGenes.put(ge, true);
-							genesToEnrich.add(ge);
-						}
-					}
-				}
-			}
-			System.out.println(genesToEnrich.size() + " genes were matching other lists to be enriched.");
-			reader.close();
-		}
-		catch(FileNotFoundException nfe)
-		{
-			System.err.println("The JSON gene list was not found at the given path: " + fileName + "\nStopping program...");
-			System.exit(-1);
-		}
-		catch(Exception e)
-		{
-			System.out.println(e);
-			System.err.println("Problem detected when reading the JSON gene list. Stopping program...");
-			System.exit(-1);
-		}
-	}
-	
-	private static void loadDataPathways(String fileName) // GMT file
-	{
-		try
-		{
-			BufferedReader br = new BufferedReader(new FileReader(fileName));
-			String line = br.readLine();
-			while(line != null)
-			{
-				String[] tokens = line.split("\t");
-				Pathway p = new Pathway();
-				p.id = tokens[0];
-				p.description = tokens[1];
-				p.url = tokens[2];
-				for(int i = 3; i < tokens.length; i++) 
-				{
-					String gene = tokens[i].toUpperCase();
-					Boolean inMatrix = backgroundGenes.get(gene);
-					if(inMatrix != null) // If this gene was in the background file
-					{
-						backgroundGenes.put(gene, true); // If this gene was in the background file
-						p.listGenes.add(gene);
-					}
-				}
-				if(p.listGenes.size() <= Parameters.maxGenesInPathway && p.listGenes.size() >= Parameters.minGenesInPathway) data_pathways.put(p.id, p);
-				line = br.readLine();
-			}
-			br.close();
-		}
-		catch(FileNotFoundException nfe)
-		{
-			System.err.println("The Pathway file was not found at the given path: " + fileName + "\nStopping program...");
-			System.exit(-1);
-		}
-		catch(Exception e)
-		{
-			System.err.println("Problem detected when reading the Pathway file. Stopping program...");
-			System.exit(-1);
-		}
-	}
-	
-	private static void loadBackgroundGenes(String filename)
-	{
-		try
-		{
-			BufferedReader br = new BufferedReader(new FileReader(filename));
-			String line = br.readLine(); // Header is skipped
-			line = br.readLine();
-			while(line != null)
-			{
-				String[] vals = line.substring(0, line.indexOf('\t')).split("\\|");
-				if(vals.length > 0) for(String gene:vals[0].split(",")) backgroundGenes.put(gene.toUpperCase(), false); // Load Ens
-				if(vals.length > 1) for(String gene:vals[1].split(",")) backgroundGenes.put(gene.toUpperCase(), false); // Load Genes
-				if(vals.length > 2) for(String gene:vals[2].split(",")) backgroundGenes.put(gene.toUpperCase(), false); // Load Others
-				
-				line = br.readLine();
-			}
-			br.close();
-		}
-		catch(FileNotFoundException nfe)
-		{
-			System.err.println("The Background file was not found at the given path: " + filename + "\nStopping program...");
-			System.exit(-1);
-		}
-		catch(Exception e)
-		{
-			System.err.println("Problem detected when reading the Background file. Stopping program...");
-			e.printStackTrace();
-			System.exit(-1);
-		}
-	}
 }
 
-class JSONListGenes
-{
-	public List<List<String>> list_genes;
-}
 
-class Pathway
-{
-	public String id;
-	public String url;
-	public String description;
-	public HashSet<String> listGenes = new HashSet<String>();
-}
-
-class ResultSet
-{
-	double[] p_value;
-	double[] adj_p_value;
-	double[] OR;
-	String[] pathways;
-	String[] descriptions;
-	String[] urls;
-	String warning;
-	
-	public void init(int length)
-	{
-		p_value = new double[length];
-		adj_p_value = new double[length];
-		descriptions = new String[length];
-		pathways = new String[length];
-		urls = new String[length];
-		OR = new double[length];
-		warning = null;
-	}
-	
-	public void clone(ResultSet res, int res_index, int this_index)
-	{
-		p_value[this_index] = res.p_value[res_index];
-		adj_p_value[this_index] = res.adj_p_value[res_index];
-		descriptions[this_index] = res.descriptions[res_index];
-		pathways[this_index] = res.pathways[res_index];
-		urls[this_index] = res.urls[res_index];
-		OR[this_index] = res.OR[res_index];
-		this.warning = res.warning;
-	}
-}
 
 
 

@@ -1,5 +1,6 @@
 package filtering;
 
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 
@@ -14,6 +15,7 @@ import model.MetaOn;
 import model.Metadata;
 import model.Metatype;
 import model.Parameters;
+import tools.Utils;
 
 public class FileFilter 
 {
@@ -61,31 +63,43 @@ public class FileFilter
 		long[] dim = loom.getDimensions();
 		System.out.println("Current /matrix size = " + dim[0] + " x " + dim[1]);
 		System.out.println("Creating New Loom file with /matrix size = " + dim[0] + " x " + (dim[1] - cellIndexesToFilter.size()));
+		if(dim[1] - cellIndexesToFilter.size() == 0) new ErrorJSON("No more cells after filtering...");
 		
 		LoomData data = new LoomData(dim[0], dim[1] - cellIndexesToFilter.size());
 		LoomFile loomNew = new LoomFile("w", Parameters.outputFolder + "output.loom");
 		
 		// Process Main Matrix
-		loomNew.createEmptyMatrix(data.nber_genes, data.nber_cells);
+		int[] blockSize = loom.getChunkSizes();
+		loomNew.createEmptyFloat32MatrixDataset("/matrix", data.nber_genes, dim[1] - cellIndexesToFilter.size(), blockSize[0], blockSize[1]);
     	    	
     	// Read the file block per block according to natural storage
-		int[] blockSize = loom.getChunkSizes();
 		int nbTotalBlocks = (int)Math.ceil((double)data.nber_genes / blockSize[0]);
 		System.out.print("Writing " + nbTotalBlocks + " independent blocks...");
 		for(int nbBlocks = 0; nbBlocks < nbTotalBlocks; nbBlocks++)
 		{		
 			// Retrieve the blocks that will contain all columns (because we write gene by gene)
-			float[][] subMatrix = loom.readBlock(blockSize[0], (int)dim[1], nbBlocks);
+			float[][] tmpMatrix = loom.readFloatBlock("/matrix", blockSize[0], (int)dim[1], nbBlocks, 0l);
 			
-			// Parsing Data and generating summary annotations
-			for(int x = 0; x < subMatrix.length; x++)
+			// Restraining to the non-filtered cells
+			float[][] subMatrix = new float[blockSize[0]][(int)dim[1] - cellIndexesToFilter.size()];
+			int colIndex = 0;
+			for(int j = 0; j < tmpMatrix[0].length; j++)
 			{
-				for(int j = 0; j < subMatrix[0].length; j++)
+				if(!cellIndexesToFilter.contains((long)j)) 
 				{
-					if(!cellIndexesToFilter.contains((long)j)) // Because I don't count the filtered cells
+					for(int i = 0; i < tmpMatrix.length; i++) subMatrix[i][colIndex] = tmpMatrix[i][j];
+					colIndex++;
+				}
+			}
+
+			// Parsing Data and generating summary annotations
+			for(int x = 0; x < tmpMatrix.length; x++)
+			{
+				int i = x + nbBlocks * blockSize[0]; // Original index
+				if(i < data.nber_genes) // In case the block is bigger than the number of genes
+				{
+					for(int j = 0; j < subMatrix[0].length; j++)
 					{
-						int i = x + nbBlocks * blockSize[0]; // Original index
-						
 						float value = subMatrix[x][j];
 						
 						if(data.is_count_table && Math.abs(value - Math.round(value)) > 1E-5) data.is_count_table = false;
@@ -99,10 +113,12 @@ public class FileFilter
 				}
 			}
 			
-			// Writing this merged block to output
-			loomNew.writeBlockInMatrix(subMatrix, data.nber_cells, nbBlocks * blockSize[0], cellIndexesToFilter);
+			// Writing this block to output
+			loomNew.writeFloatBlockDataset("/matrix", subMatrix, nbBlocks, 0);
 		}
 		System.out.println(" OK!");
+		
+		loomNew.resizeDataset("/matrix", data.nber_genes, data.nber_cells); // Cause writing fixed-size blocks can extend the matrix size with 0
 		
 		// Process metadata
 		System.out.print("Now processing the Metadata...");
@@ -120,8 +136,94 @@ public class FileFilter
 		Metadata m = new Metadata("/row_attrs/_Sum", Metatype.NUMERIC, MetaOn.GENE, 1, data.sum.size());
 		m.size = loomNew.getSizeInBytes("/row_attrs/_Sum");
 		data.meta.add(m);
-		data.nber_ercc = loomNew.getNbERCCs(); // For final JSON
 		loom.close();
+		loomNew.close();
+		FilterCellsJSON.writeOutputJSON(data);
+    }
+	
+	private static void filterGenes(LoomFile loom, HashSet<Long> geneIndexesToFilter)
+    {
+    	// Create new Loom filtered
+		System.out.println("Filtering the LOOM file...");
+		long[] dim = loom.getDimensions();
+		System.out.println("Current /matrix size = " + dim[0] + " x " + dim[1]);
+		System.out.println("Creating New Loom file with /matrix size = " + (dim[0] - geneIndexesToFilter.size()) + " x " + dim[1]);
+		if(dim[0] - geneIndexesToFilter.size() == 0) new ErrorJSON("No more genes after filtering...");
+		
+		LoomData data = new LoomData(dim[0] - geneIndexesToFilter.size(), dim[1]);
+		LoomFile loomNew = new LoomFile("w", Parameters.outputFolder + "output.loom");
+		
+		// Process Main Matrix
+		int[] blockSize = loom.getChunkSizes();
+		loomNew.createEmptyFloat32MatrixDataset("/matrix", dim[0] - geneIndexesToFilter.size(), data.nber_cells, blockSize[0], blockSize[1]);
+
+    	// Read the file block per block according to natural storage
+		int nbTotalBlocks = (int)Math.ceil((double)dim[1] / blockSize[1]);
+		System.out.print("Reading " + nbTotalBlocks + " independent blocks...");
+		for(int nbBlocks = 0; nbBlocks < nbTotalBlocks; nbBlocks++)
+		{		
+			// Retrieve the blocks that will contain all columns (because we write cell by cell)
+			float[][] tmpMatrix = loom.readFloatBlock("/matrix", (int)dim[0], blockSize[1], 0l, nbBlocks);
+
+			// Restraining to the non-filtered genes
+			float[][] subMatrix = new float[(int)dim[0] - geneIndexesToFilter.size()][(int)blockSize[1]]; // TODO does not work if too big array
+			int rowIndex = 0;
+			for(int i = 0; i < tmpMatrix.length; i++)
+			{
+				if(!geneIndexesToFilter.contains((long)i)) 
+				{
+					for(int j = 0; j < tmpMatrix[i].length; j++) subMatrix[rowIndex][j] = tmpMatrix[i][j];
+					rowIndex++;
+				}
+			}
+			
+			// Parsing Data and generating summary annotations
+			for(int i = 0; i < subMatrix.length; i++)
+			{
+				for(int y = 0; y < tmpMatrix[0].length; y++) // tmpmatrix because if too many cells, it would fail :)
+				{
+					float value = subMatrix[i][y];
+				
+					int j = y + nbBlocks * blockSize[1]; // Original index
+					
+					if(data.is_count_table && Math.abs(value - Math.round(value)) > 1E-5) data.is_count_table = false;
+	        				
+	        		// Re-Generate the sums
+					data.depth.set(j, data.depth.get(j) + value);
+					
+					// Number of zeroes / detected genes 
+					if(value == 0) data.nber_zeros++;
+					else data.detected_genes.set(j, data.detected_genes.get(j) + 1);
+				}
+			}
+			
+			// Writing this chunk to output
+			loomNew.writeFloatBlockDataset("/matrix", subMatrix, 0, nbBlocks);
+		}
+		System.out.println(" OK!");		
+		
+		loomNew.resizeDataset("/matrix", data.nber_genes, data.nber_cells); // Cause writing fixed-size blocks can extend the matrix size with 0
+		
+		// Process metadata
+		System.out.print("Now processing the Metadata...");
+		List<Metadata> meta = loom.listMetadata();
+		System.out.println(meta.size() + " metadata found");
+		for(Metadata m:meta) 
+		{
+			if(!m.path.equals("/col_attrs/_Depth") && !m.path.equals("/col_attrs/_Detected_Genes"))
+			{
+				LoomFile.copyMetadata(m, geneIndexesToFilter, false, loom, loomNew);
+				data.meta.add(m);
+			}
+		}
+		loomNew.writeDoubleArray("/col_attrs/_Depth", data.depth);
+		Metadata m = new Metadata("/col_attrs/_Depth", Metatype.NUMERIC, MetaOn.CELL, data.depth.size(), 1);
+		m.size = loomNew.getSizeInBytes("/col_attrs/_Depth");
+		data.meta.add(m);
+		loomNew.writeIntArray("/col_attrs/_Detected_Genes", data.detected_genes);
+		m = new Metadata("/col_attrs/_Detected_Genes", Metatype.NUMERIC, MetaOn.CELL, data.detected_genes.size(), 1);
+		m.size = loomNew.getSizeInBytes("/col_attrs/_Detected_Genes");
+		data.meta.add(m);
 		loomNew.close();
 		FilterCellsJSON.writeOutputJSON(data);
     }
@@ -149,6 +251,67 @@ public class FileFilter
         {
         	new ErrorJSON(ioe.getMessage());
         }
+    }
+    
+    public static void filterDEMetadata()
+    {
+    	LoomFile loom = new LoomFile("r", Parameters.loomFile);
+    	// Check empty columns / empty rows
+    	if(!Parameters.iAnnot.startsWith("/row_attrs")) new ErrorJSON("Your DE metadata should starts with /row_attrs (gene metadata)");
+    	if(!loom.exists(Parameters.iAnnot)) new ErrorJSON("Error in the Loom file. Path "+Parameters.iAnnot+" should exist!");
+    	float[][] deResults = loom.readFloatMatrix(Parameters.iAnnot);
+    	if(deResults[0].length != 5) new ErrorJSON("Your DE metadata should contain 5 columns, it contains " + deResults[0].length);
+    	loom.close();
+    	
+    	HashMap<Integer, Float> geneUpIndexesToKeep = new HashMap<Integer, Float>();
+    	HashMap<Integer, Float> geneDownIndexesToKeep = new HashMap<Integer, Float>();
+    	for(int i = 0; i < deResults.length; i++)
+    	{
+    		if(Math.pow(2, Math.abs(deResults[i][0])) >= Parameters.fcThreshold && deResults[i][1] <= Parameters.pThreshold && deResults[i][2] <= Parameters.fdrThreshold)
+    		{
+    			// Passing all thresholds
+    			if(deResults[i][0] >= 0) geneUpIndexesToKeep.put(i, deResults[i][0]);
+    			else geneDownIndexesToKeep.put(i, deResults[i][0]);
+    		}
+    	}
+    	
+    	// Keep only the top X values, if requested
+    	int[] upIndexes = new int[Math.min(Parameters.topThreshold , geneUpIndexesToKeep.size())];
+    	Integer[] sortedkeys = Utils.sortF(geneUpIndexesToKeep, true);
+    	for(int i=0; i < upIndexes.length; i++) upIndexes[i] = sortedkeys[i];
+
+    	// Keep only the top X values, if requested
+    	int[] downIndexes = new int[Math.min(Parameters.topThreshold , geneDownIndexesToKeep.size())];
+    	sortedkeys = Utils.sortF(geneDownIndexesToKeep, false);
+    	for(int i=0; i < downIndexes.length; i++) downIndexes[i] = sortedkeys[i];
+    	
+    	// Create output file as a String
+    	StringBuilder sb = new StringBuilder();
+    	if(Parameters.displayValues)
+    	{
+			sb.append("{\"up\":[");
+			String prefix = "";
+			for(int i=0; i < upIndexes.length; i++) 
+			{
+				sb.append(prefix).append(upIndexes[i]);
+				prefix = ",";
+			}
+			sb.append("],\"down\":[");
+			prefix = "";
+			for(int i=0; i < downIndexes.length; i++) 
+			{
+				sb.append(prefix).append(downIndexes[i]);
+				prefix = ",";
+			}
+			sb.append("]}");
+    	}
+    	else
+    	{
+    		sb.append("{\"up\":").append(upIndexes.length).append(",\"down\":").append(downIndexes.length).append("}");
+    	}
+		
+		// Writing results
+		Utils.writeJSON(sb, Parameters.JSONFileName);
     }
     
     public static void filterKEEP() // Only remove empty genes
@@ -205,7 +368,7 @@ public class FileFilter
 		for(int nbBlocks = 0; nbBlocks < nbTotalBlocks; nbBlocks++)
 		{		
 			// Retrieve the blocks that will contain all columns (because we write gene by gene)
-			float[][] subMatrix = loom.readBlock(blockSize[0], (int)dim[1], nbBlocks);
+			float[][] subMatrix = loom.readFloatBlock("/matrix", blockSize[0], (int)dim[1], nbBlocks, 0l);
 			
 			// Parsing Data and generating summary annotations
 			
@@ -232,82 +395,6 @@ public class FileFilter
 		//loom.writeLayer("_CPM", cpm);
 		filterGenes(loom, geneIndexesToFilter);
 		loom.close();
-    }
-    
-    private static void filterGenes(LoomFile loom, HashSet<Long> geneIndexesToFilter)
-    {
-    	// Create new Loom filtered
-		System.out.println("Filtering the LOOM file...");
-		long[] dim = loom.getDimensions();
-		System.out.println("Current /matrix size = " + dim[0] + " x " + dim[1]);
-		System.out.println("Creating New Loom file with /matrix size = " + (dim[0] - geneIndexesToFilter.size()) + " x " + dim[1]);
-		
-		LoomData data = new LoomData(dim[0] - geneIndexesToFilter.size(), dim[1]);
-		LoomFile loomNew = new LoomFile("w", Parameters.outputFolder + "output.loom");
-		
-		// Process Main Matrix
-		loomNew.createEmptyMatrix(data.nber_genes, data.nber_cells);
-    	    	
-    	// Read the file block per block according to natural storage
-		long indexRowToWrite = 0;
-		int[] blockSize = loom.getChunkSizes();
-		int nbTotalBlocks = (int)Math.ceil((double)dim[0] / blockSize[0]);
-		System.out.print("Reading " + nbTotalBlocks + " independent blocks...");
-		for(int nbBlocks = 0; nbBlocks < nbTotalBlocks; nbBlocks++)
-		{		
-			// Retrieve the blocks that will contain all columns (because we write gene by gene)
-			float[][] subMatrix = loom.readBlock(blockSize[0], (int)dim[1], nbBlocks);
-			
-			// Parsing Data and generating summary annotations
-			for(int x = 0; x < subMatrix.length; x++)
-			{
-				long i = x + nbBlocks * blockSize[0]; // Original index
-				if(!geneIndexesToFilter.contains(i))
-				{
-					for(int j = 0; j < subMatrix[0].length; j++)
-					{
-						float value = subMatrix[x][j];
-							
-						if(data.is_count_table && Math.abs(value - Math.round(value)) > 1E-5) data.is_count_table = false;
-		        				
-		        		// Re-Generate the sums
-						data.depth.set(j, data.depth.get(j) + value);
-						
-						// Number of zeroes / detected genes 
-						if(value == 0) data.nber_zeros++;
-						else data.detected_genes.set(j, data.detected_genes.get(j) + 1);
-					}
-					// Writing this row to output
-					loomNew.writeFloatRow("/matrix", subMatrix[x], indexRowToWrite);
-					indexRowToWrite++;
-				}
-			}
-		}
-		System.out.println(" OK!");
-		
-		// Process metadata
-		System.out.print("Now processing the Metadata...");
-		List<Metadata> meta = loom.listMetadata();
-		System.out.println(meta.size() + " metadata found");
-		for(Metadata m:meta) 
-		{
-			if(!m.path.equals("/col_attrs/_Depth") && !m.path.equals("/col_attrs/_Detected_Genes"))
-			{
-				LoomFile.copyMetadata(m, geneIndexesToFilter, false, loom, loomNew);
-				data.meta.add(m);
-			}
-		}
-		loomNew.writeDoubleArray("/col_attrs/_Depth", data.depth);
-		Metadata m = new Metadata("/col_attrs/_Depth", Metatype.NUMERIC, MetaOn.CELL, data.depth.size(), 1);
-		m.size = loomNew.getSizeInBytes("/col_attrs/_Depth");
-		data.meta.add(m);
-		loomNew.writeIntArray("/col_attrs/_Detected_Genes", data.detected_genes);
-		m = new Metadata("/col_attrs/_Detected_Genes", Metatype.NUMERIC, MetaOn.CELL, data.detected_genes.size(), 1);
-		m.size = loomNew.getSizeInBytes("/col_attrs/_Detected_Genes");
-		data.meta.add(m);
-		data.nber_ercc = loomNew.getNbERCCs(); // For final JSON
-		loomNew.close();
-		FilterCellsJSON.writeOutputJSON(data);
     }
     
     /*public static void filterEXPRESSED() throws IOException

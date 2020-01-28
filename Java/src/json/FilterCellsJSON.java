@@ -45,17 +45,21 @@ public class FilterCellsJSON
 	
 	public static void writeOutputJSON(LoomData data)
     {
-    	try
-    	{
-    		//data.meta.forEach((m)->m.fillMap());
+    	// Prepare output JSON
+		StringBuffer sb = new StringBuffer();
+		sb.append("{\"detected_format\":\"LOOM\",");	
+		sb.append("\"loom_version\":\"").append(Parameters.loomVersion).append("\",");
+		sb.append("\"nber_rows\":").append(data.nber_genes).append(",");
+		sb.append("\"nber_cols\":").append(data.nber_cells).append(",");
+		sb.append("\"nber_zeros\":").append(data.nber_zeros).append(",");
+		sb.append("\"is_count_table\":").append(data.is_count_table?1:0).append(",");
+		sb.append(Metadata.toString(data.meta)).append("}");
+    		
+    	// Write output JSON
+        try
+        {
     		BufferedWriter bw = new BufferedWriter(new FileWriter(Parameters.outputFolder + "output.json"));
-    		bw.write("{\"detected_format\":\"LOOM\",");
-    		bw.write("\"nber_rows\":" + data.nber_genes + ",");
-        	bw.write("\"nber_cols\":" + data.nber_cells + ",");
-        	bw.write("\"nber_zeros\":" + data.nber_zeros + ",");
-        	bw.write("\"nber_ercc\":" + data.nber_ercc + ",");
-         	bw.write("\"is_count_table\":" + (data.is_count_table?1:0) + ",");
-         	bw.write(Metadata.toString(data.meta) + "}");
+    		bw.write(sb.toString());
         	bw.close();
     	}
     	catch(IOException ioe)

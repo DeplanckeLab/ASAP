@@ -28,6 +28,7 @@ import model.MetaOn;
 import model.Metadata;
 import model.Metatype;
 import model.Parameters;
+import parsing.model.FileType;
 import parsing.model.Gene;
 import tools.Utils;
 
@@ -36,19 +37,15 @@ public class LoomFile
 	private IHDF5Reader handle = null;
 	
 	public boolean readOnly = false;
-	
-	public int writtenRow; // For writing matrix
 
 	public LoomFile(String type, String filename) 
 	{
-		writtenRow = -1;
-		
 		if(type.equals("w")) // Always create new
 		{
 			createEmptyLoomFile(filename);
 			readOnly = false;
 		}
-		else if(type.equals("w+")) // Modify if existing 
+		else if(type.equals("r+")) // Modify if existing 
 		{
 			if(!new File(filename).exists()) createEmptyLoomFile(filename);
 
@@ -59,7 +56,7 @@ public class LoomFile
 				try
 				{				
 					this.handle = HDF5Factory.open(filename);
-					if(!isLoomFormatOK()) new ErrorJSON("Loom format is not OK: " + filename);
+					checkLoomFormat();
 				}
 				catch(HDF5LibraryException ex)
 				{
@@ -91,7 +88,7 @@ public class LoomFile
 				try
 				{
 					this.handle = HDF5Factory.openForReading(filename);
-					if(!isLoomFormatOK()) new ErrorJSON("Loom format is not OK: " + filename);
+					checkLoomFormat();
 				}
 				catch(HDF5LibraryException ex)
 				{
@@ -118,15 +115,32 @@ public class LoomFile
 		
 	}
 	
-	public boolean isLoomFormatOK() // Following http://linnarssonlab.org/loompy/format/index.html#specification
+	public void checkLoomFormat() // Following http://linnarssonlab.org/loompy/format/index.html#specification
 	{
 		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
-		if(!this.handle.object().isDataSet("/matrix")) return false;
-		if(!this.handle.isGroup("col_attrs")) return false;
-		if(!this.handle.isGroup("col_graphs")) return false;
-		if(!this.handle.isGroup("row_attrs")) return false;
-		if(!this.handle.isGroup("row_graphs")) return false;
-		return true;
+		StringBuffer sb = new StringBuffer();
+		if(!this.handle.object().isDataSet("/matrix")) sb.append("Loom format is not correct, there is no /matrix dataset\n");
+		if(!this.handle.isGroup("col_attrs")) sb.append("Loom format is not correct, there is no /col_attrs group");
+		if(!this.handle.isGroup("col_graphs")) sb.append("Loom format is not correct, there is no /col_graphs group");
+		if(!this.handle.isGroup("row_attrs")) sb.append("Loom format is not correct, there is no /row_attrs group");
+		if(!this.handle.isGroup("row_graphs")) sb.append("Loom format is not correct, there is no /row_graphs group");
+		String res = sb.toString();
+		if(res.length() != 0) { this.close(); new ErrorJSON(res); }
+	}
+	
+	public FileType isLoom() // Following http://linnarssonlab.org/loompy/format/index.html#specification
+	{
+		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
+		if(!this.handle.object().isDataSet("/matrix")) return FileType.UNKNOWN;
+		if(!this.handle.isGroup("col_attrs")) return FileType.UNKNOWN;
+		if(!this.handle.isGroup("col_graphs")) return FileType.UNKNOWN;
+		if(!this.handle.isGroup("row_attrs")) return FileType.UNKNOWN;
+		if(!this.handle.isGroup("row_graphs")) return FileType.UNKNOWN;
+		Parameters.loomVersion = "2.0.0";
+		if(!this.handle.isGroup("attrs")) return FileType.LOOM;
+		if(!this.handle.exists("attrs/LOOM_SPEC_VERSION")) return FileType.LOOM;
+		Parameters.loomVersion = this.handle.readString("attrs/LOOM_SPEC_VERSION");
+		return FileType.LOOM;
 	}
 	
 	public float[] readRow(long index, String path)
@@ -145,22 +159,16 @@ public class LoomFile
 		return Utils.t(res)[0];
 	}
 	
-	public float[][] readBlock(int blockSizeX, int blockSizeY, long nbBlocks)
+	public float[][] readFloatBlock(String path, int blockSizeX, int blockSizeY, long nbBlocksX, long nbBlocksY)
 	{
 		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
-		return this.handle.float32().readMatrixBlock("/matrix", blockSizeX, blockSizeY, nbBlocks, 0l); // TODO does not work if too big array
+		return this.handle.float32().readMatrixBlock(path, blockSizeX, blockSizeY, nbBlocksX, nbBlocksY); // TODO does not work if too big array
 	}
 	
-	public float[][] readFloatBlock(String path, int blockSizeX, int blockSizeY, long nbBlocks)
+	public int[][] readIntBlock(String path, int blockSizeX, int blockSizeY, long nbBlocksX, long nbBlocksY)
 	{
 		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
-		return this.handle.float32().readMatrixBlock(path, blockSizeX, blockSizeY, nbBlocks, 0l); // TODO does not work if too big array
-	}
-	
-	public int[][] readIntBlock(String path, int blockSizeX, int blockSizeY, long nbBlocks)
-	{
-		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
-		return this.handle.int32().readMatrixBlock(path, blockSizeX, blockSizeY, nbBlocks, 0l); // TODO does not work if too big array
+		return this.handle.int32().readMatrixBlock(path, blockSizeX, blockSizeY, nbBlocksX, nbBlocksY); // TODO does not work if too big array
 	}
 	
 	public List<Metadata> listMetadata()
@@ -230,14 +238,58 @@ public class LoomFile
 	public void removeMetadata(String path)
 	{
 		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
-		if(this.readOnly) new ErrorJSON("Cannot delete from Read-Only file");
+		if(this.readOnly) { this.close(); new ErrorJSON("Cannot delete from Read-Only file"); }
 		if(this.handle.object().exists(path)) ((IHDF5Writer)this.handle).object().delete(path);
-		else new ErrorJSON("This metadata (" + path + ") is not found in the Loom file");
+		else { this.close(); new ErrorJSON("This metadata (" + path + ") is not found in the Loom file"); }
 	}
 	
 	public HDF5DataClass getDatasetType(String path)
 	{
 		return this.handle.getDataSetInformation(path).getTypeInformation().getDataClass();
+	}
+	
+	public ArrayList<Long> getIndexesWhereValueIs(String path, String value)
+	{
+		// First check if loom file is opened
+		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
+		
+		// Then check if the path corresponds to a metadata path
+		if(!path.contains("col_attrs/") && !path.contains("row_attrs/")) new ErrorJSON("Your path is not a proper CELL or GENE metadata");
+		
+		// Finally check if the path exist in the Loom
+		if(!this.handle.exists(path)) new ErrorJSON("Error in the Loom file. Path " + path + " does not exist!");
+			
+		// Check dimensions
+		long[] dim = this.getDimensions(path);
+		if(dim.length > 1 && dim[1] > 0) new ErrorJSON("Not implemented for matrices..."); // Matrix
+		
+		// Variables
+		ArrayList<Long> indexesMatching = new ArrayList<Long>();
+		
+		// Check the metadata type and create the output
+		HDF5DataClass h5_class = this.getDataClass(path);
+		switch(h5_class)
+		{
+			case FLOAT:
+				FloatArray64 fValues = readFloatArray(path);
+				float fToCompare= Float.parseFloat(value);
+				for (long i = 0; i < fValues.size(); i++) if(fValues.get(i) == fToCompare) indexesMatching.add(i);
+				break;		
+			case INTEGER:
+				IntArray64 iValues = readIntArray(path);
+				int iToCompare= Integer.parseInt(value);
+				for (long i = 0; i < iValues.size(); i++) if(iValues.get(i) == iToCompare) indexesMatching.add(i);
+				break;
+			case STRING:
+				StringArray64 sValues = readStringArray(path);
+				for (long i = 0; i < sValues.size(); i++) if(sValues.get(i).equals(value)) indexesMatching.add(i);
+			default:
+				new ErrorJSON("Cannot handle this type of metadata yet.");
+				break;
+		}
+		
+		// Return the indexes matching the value
+		return indexesMatching;
 	}
 	
 	public Metadata readMetadata(String path)
@@ -379,18 +431,6 @@ public class LoomFile
 		return out;
 	}
 	
-	public long getNbERCCs()
-	{
-		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
-		if(this.handle.object().exists("/col_attrs/_ERCCs"))
-		{
-			long[] dim = this.handle.getDataSetInformation("/col_attrs/_ERCCs").getDimensions();
-			if(dim.length > 1) return dim[1];
-			return 1;
-		}
-		return 0;
-	}
-	
 	public long[] getDimensions() // 0 = Nb Cells, 1 = Nb Genes
 	{
 		return this.getDimensions("/matrix");
@@ -399,6 +439,7 @@ public class LoomFile
 	public long[] getDimensions(String path)
 	{
 		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
+		if(!this.handle.object().exists(path)) { this.close(); new ErrorJSON("This dataset does not exist"); }
 		return this.handle.getDataSetInformation(path).getDimensions();
 	}
 	
@@ -422,34 +463,76 @@ public class LoomFile
 		return res;
 	}
 	
-	public int getGeneIndex(String geneName)
+	public long[] getGeneIndexes(String[] names)
 	{
+		int found = 0;
 		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
+		HashMap<String, Long> tmp = new HashMap<>();
+		for(String s:names) tmp.put(s.toUpperCase(), -1l);
 		if(this.handle.object().isDataSet("/row_attrs/Gene"))
 		{
-			String[] genes = this.handle.string().readArray("/row_attrs/Gene");
-			for(int i = 0; i < genes.length; i++) if(genes[i].equals(geneName)) return i; // CASE should match ?
+			StringArray64 genes = this.readStringArray("/row_attrs/Gene");
+			for(long i = 0; i < genes.size(); i++) 
+			{
+				String g = genes.get(i).toUpperCase();
+				if(tmp.containsKey(g)) 
+				{
+					tmp.put(g, i);
+					found++;
+					if(found == names.length) break;
+				}
+			}
 		}
-		if(this.handle.object().isDataSet("/row_attrs/Accession"))
+		if(this.handle.object().isDataSet("/row_attrs/Accession") && found != names.length)
 		{
-			String[] genes = this.handle.string().readArray("/row_attrs/Accession");
-			for(int i = 0; i < genes.length; i++) if(genes[i].equals(geneName)) return i; // CASE should match ?
+			StringArray64 genes = this.readStringArray("/row_attrs/Accession");
+			for(long i = 0; i < genes.size(); i++) 
+			{
+				String g = genes.get(i).toUpperCase();
+				if(tmp.containsKey(g)) 
+				{
+					tmp.put(g, i);
+					found++;
+					if(found == names.length) break;
+				}
+			}
 		}
 		// We do not store the Alt Names in the Loom file
-		return -1;
+		
+		// Prepare output res
+		long[] res = new long[names.length];
+		for (int i = 0; i < names.length; i++) res[i] = tmp.get(names[i].toUpperCase());
+		
+		return res;
 	}
 	
-	public int getCellIndex(String cellName)
+	public long[] getCellIndexes(String[] names)
 	{
+		int found = 0;
 		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
+		HashMap<String, Long> tmp = new HashMap<>();
+		for(String s:names) tmp.put(s.toUpperCase(), -1l);
 		if(this.handle.object().isDataSet("/col_attrs/CellID"))
 		{
-			String[] cells = this.handle.string().readArray("/col_attrs/CellID");
-			for(int i = 0; i < cells.length; i++) if(cells[i].equals(cellName)) return i;
+			StringArray64 cells = this.readStringArray("/col_attrs/CellID");
+			for(long i = 0; i < cells.size(); i++) 
+			{
+				String c = cells.get(i).toUpperCase();
+				if(tmp.containsKey(c)) 
+				{
+					tmp.put(c, i);
+					found++;
+					if(found == names.length) break;
+				}
+			}
 		}
-		return -1; // Not found
+		// Prepare output res
+		long[] res = new long[names.length];
+		for (int i = 0; i < names.length; i++) res[i] = tmp.get(names[i].toUpperCase());
+		
+		return res;
 	}
-	
+
 	public float[] readCol(long index)
 	{
 		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
@@ -517,6 +600,7 @@ public class LoomFile
 	public StringArray64 readStringArray(String path)
 	{
 		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
+		if(!this.handle.object().exists(path)) new ErrorJSON("This dataset does not exist:" + path);
 		long length = this.handle.getDataSetInformation(path).getDimensions()[0];
 		StringArray64 res = new StringArray64(length); // Know the actual size of the array, and create it sufficiently big
 		int nbChunks = (int)(length / StringArray64.chunkSize()) + 1;
@@ -539,6 +623,11 @@ public class LoomFile
 	{
 		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
 		return this.handle.getDataSetInformation(path).getTypeInformation().getDataClass();
+	}
+	
+	public StringArray64 getGeneHGNC()
+	{
+		return this.readStringArray("/row_attrs/Gene");
 	}
 	
 	public Gene[] getGeneNames()
@@ -585,9 +674,11 @@ public class LoomFile
 		
     	// Create Loom file
     	IHDF5WriterConfigurator config = HDF5Factory.configure(filename);
-    	this.handle = config.dontUseExtendableDataTypes().overwrite().useSimpleDataSpaceForAttributes().writer();
+    	this.handle = config.dontUseExtendableDataTypes().overwrite().useSimpleDataSpaceForAttributes().useUTF8CharacterEncoding().writer();
 	    
         // Required annotations
+    	((IHDF5Writer)this.handle).object().createGroup("/attrs"); // Loom v3
+    	((IHDF5Writer)this.handle).string().write("/attrs/LOOM_SPEC_VERSION", "3.0.0"); // Loom v3
     	((IHDF5Writer)this.handle).object().createGroup("/col_attrs");
     	((IHDF5Writer)this.handle).object().createGroup("/row_attrs");
     	((IHDF5Writer)this.handle).object().createGroup("/layers"); // this is not required but we use it a lot
@@ -659,6 +750,13 @@ public class LoomFile
 		((IHDF5Writer)this.handle).float32().writeArray(path, data);
     }
 	
+	public void writeIntMatrix(String path, int[][] data)
+    {
+		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
+		if(this.readOnly) new ErrorJSON("Cannot write in readOnly matrix");
+		((IHDF5Writer)this.handle).int32().writeMatrix(path, data);
+    }
+	
 	public void writeIntArray(String path, int[] data)
     {
 		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
@@ -673,7 +771,7 @@ public class LoomFile
 		((IHDF5Writer)this.handle).string().writeArray(path, data);
     }
 	
-	public void writeBlockInMatrix(float[][] data, int startIndex, HashSet<Long> filteredGenes) // matrix.length == nb genes
+	/*public void writeBlockInFloatMatrix(float[][] data, int startIndex, HashSet<Long> filteredGenes) // matrix.length == nb genes
     {
 		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
 		if(this.readOnly) new ErrorJSON("Cannot write in readOnly matrix");
@@ -718,7 +816,7 @@ public class LoomFile
 		if(this.readOnly) new ErrorJSON("Cannot write in readOnly matrix");
         // Write all matrix stored in RAM, by chunks of [nbGenes, chunkLength] i.e. block of cells by block of cells
 		((IHDF5Writer)this.handle).float32().writeMatrixBlock("/matrix", data, 0, startIndex);
-    }
+    }*/
 	
 	public void writeFloatBlockDataset(String path, float[][] data, int blockNumberX, int blockNumberY) // matrix.length == nb genes
     {
@@ -733,24 +831,6 @@ public class LoomFile
 		if(this.readOnly) new ErrorJSON("Cannot write in readOnly matrix");
 		((IHDF5Writer)this.handle).int32().writeMatrixBlock(path, data, blockNumberX, blockNumberY);
     }
-	
-	public void writeFloatRow(String path, float[] data, long index)
-    {
-		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
-		if(this.readOnly) new ErrorJSON("Cannot write in readOnly matrix");
-        float[][] m = new float[1][data.length];
-        m[0] = data;
-        ((IHDF5Writer)this.handle).float32().writeMatrixBlock(path, m, index, 0);
-    }
-	
-	public void createEmptyMatrix(long nbGenes, long nbCells)
-	{
-		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
-		if(this.readOnly) new ErrorJSON("Cannot write in readOnly matrix");
-        HDF5FloatStorageFeatureBuilder features = new HDF5FloatStorageFeatureBuilder();
-        features.noScaling().chunkedStorageLayout().datasetReplacementEnforceKeepExisting().deflateLevel((byte)2);
-        ((IHDF5Writer)this.handle).float32().createMatrix("/matrix", nbGenes, nbCells, 1, (int)nbCells, features.features());
-	}
 	
 	public void createEmptyFloat32MatrixDataset(String path, long nbGenes, long nbCells, int chunkSizeX, int chunkSizeY)
 	{
@@ -796,16 +876,7 @@ public class LoomFile
         features.noScaling().chunkedStorageLayout().datasetReplacementEnforceKeepExisting().deflateLevel((byte)2);
         ((IHDF5Writer)this.handle).string().createArray(path, length, chunkSize, features.features());
 	}
-	
-	public void createEmptyMatrix(long nbGenes, long nbCells, int chunkSize)
-	{
-		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
-		if(this.readOnly) new ErrorJSON("Cannot write in readOnly matrix");
-        HDF5FloatStorageFeatureBuilder features = new HDF5FloatStorageFeatureBuilder();
-        features.noScaling().chunkedStorageLayout().datasetReplacementEnforceKeepExisting().deflateLevel((byte)2);
-        ((IHDF5Writer)this.handle).float32().createMatrix("/matrix", nbGenes, nbCells, 64, chunkSize, features.features());
-	}
-		
+			
 	public void resizeDataset(String path, long x, long y)
 	{
 		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
@@ -815,15 +886,13 @@ public class LoomFile
     
     /**** Static methods ******/
     
-    public static void copyMetadata(String path, LoomFile from, LoomFile to)
+    public static boolean copyMetadata(String path, LoomFile from, LoomFile to)
 	{
     	if(to.readOnly) new ErrorJSON("Cannot write metadata in 'to' Loom File. Please open it for writing.");
 		
 		long[] dim = from.getDimensions(path);
 		int[] blockSize = from.getChunkSizes(path);
-		int nbTotalBlocks = (int)Math.ceil((double)dim[0] / blockSize[0]); // dim[0] === Nb genes ?
-		System.out.println("Reading " + nbTotalBlocks + " independent blocks...");
-		boolean resizeNeeded = false;
+		boolean flag_copied = false;
 		
 		if(to.exists(path)) to.removeMetadata(path); // Remove if existing
 		HDF5DataClass h5_class = from.getDataClass(path);
@@ -832,60 +901,79 @@ public class LoomFile
 			case FLOAT:	
 				if(dim.length > 1 && dim[1] > 0) // Matrix
 				{
-					to.createEmptyFloat32MatrixDataset(path, dim[0], dim[1], blockSize[0], blockSize[1]); // Create matrix with same chunking
-					for(int nbBlocks = 0; nbBlocks < nbTotalBlocks; nbBlocks++)
-					{		
-						// Retrieve the blocks that will contain all columns
-						float[][] subMatrix = from.readFloatBlock(path, blockSize[0], (int)dim[1], nbBlocks); // Always read all blocks in one full line
-						
-						if(subMatrix.length < blockSize[0]) // Because it does not write the end of the array, if the size is less than blocksize
-						{
-							float[][] subMatrixTmp = new float[blockSize[0]][(int)dim[1]];
-							for (int i = 0; i < subMatrix.length; i++) for (int j = 0; j < subMatrix[i].length; j++) subMatrixTmp[i][j] = subMatrix[i][j];
-							subMatrix = subMatrixTmp;
-							resizeNeeded = true;
+					if(blockSize != null)
+					{
+						boolean resizeNeeded = false;
+						int nbTotalBlocks = (int)Math.ceil((double)dim[0] / blockSize[0]); // dim[0] === Nb genes ?
+						to.createEmptyFloat32MatrixDataset(path, dim[0], dim[1], blockSize[0], blockSize[1]); // Create matrix with same chunking
+						for(int nbBlocks = 0; nbBlocks < nbTotalBlocks; nbBlocks++)
+						{		
+							// Retrieve the blocks that will contain all columns
+							float[][] subMatrix = from.readFloatBlock(path, blockSize[0], (int)dim[1], nbBlocks, 0l); // Always read all blocks in one full line
+							
+							if(subMatrix.length < blockSize[0]) // Because it does not write the end of the array, if the size is less than blocksize
+							{
+								float[][] subMatrixTmp = new float[blockSize[0]][(int)dim[1]];
+								for (int i = 0; i < subMatrix.length; i++) for (int j = 0; j < subMatrix[i].length; j++) subMatrixTmp[i][j] = subMatrix[i][j];
+								subMatrix = subMatrixTmp;
+								resizeNeeded = true;
+							}
+							
+							// Writing data
+							to.writeFloatBlockDataset(path, subMatrix, nbBlocks, 0);
 						}
-						
-						// Writing data
-						to.writeFloatBlockDataset(path, subMatrix, nbBlocks, 0);
+						// Because we added extra rows
+						if(resizeNeeded) to.resizeDataset(path, dim[0], dim[1]);
 					}
-					
-					// Because we added extra rows
-					if(resizeNeeded) to.resizeDataset(path, dim[0], dim[1]);
+					else // No chunks = contiguous storage
+					{
+						to.writeFloatMatrix(path, from.readFloatMatrix(path));
+					}
 				}
 				else // Vector
 				{
 					to.writeFloatArray(path, from.readFloatArray(path));
 				}
+				flag_copied = true;
 				break;
 			case INTEGER:
 				if(dim.length > 1 && dim[1] > 0) // Matrix
 				{
-					to.createEmptyInt32MatrixDataset(path, dim[0], dim[1], blockSize[0], blockSize[1]); // Create matrix with same chunking
-					for(int nbBlocks = 0; nbBlocks < nbTotalBlocks; nbBlocks++)
-					{		
-						// Retrieve the blocks that will contain all columns
-						int[][] subMatrix = from.readIntBlock(path, blockSize[0], (int)dim[1], nbBlocks); // Always read all blocks in one full line
-						
-						if(subMatrix.length < blockSize[0]) // Because it does not write the end of the array, if the size is less than blocksize
-						{
-							int[][] subMatrixTmp = new int[blockSize[0]][(int)dim[1]];
-							for (int i = 0; i < subMatrix.length; i++) for (int j = 0; j < subMatrix[i].length; j++) subMatrixTmp[i][j] = subMatrix[i][j];
-							subMatrix = subMatrixTmp;
-							resizeNeeded = true;
+					if(blockSize != null)
+					{
+						boolean resizeNeeded = false;
+						int nbTotalBlocks = (int)Math.ceil((double)dim[0] / blockSize[0]); // dim[0] === Nb genes ?
+						to.createEmptyInt32MatrixDataset(path, dim[0], dim[1], blockSize[0], blockSize[1]); // Create matrix with same chunking
+						for(int nbBlocks = 0; nbBlocks < nbTotalBlocks; nbBlocks++)
+						{		
+							// Retrieve the blocks that will contain all columns
+							int[][] subMatrix = from.readIntBlock(path, blockSize[0], (int)dim[1], nbBlocks, 0l); // Always read all blocks in one full line
+							
+							if(subMatrix.length < blockSize[0]) // Because it does not write the end of the array, if the size is less than blocksize
+							{
+								int[][] subMatrixTmp = new int[blockSize[0]][(int)dim[1]];
+								for (int i = 0; i < subMatrix.length; i++) for (int j = 0; j < subMatrix[i].length; j++) subMatrixTmp[i][j] = subMatrix[i][j];
+								subMatrix = subMatrixTmp;
+								resizeNeeded = true;
+							}
+							
+							// Writing data
+							to.writeIntBlockDataset(path, subMatrix, nbBlocks, 0);
 						}
 						
-						// Writing data
-						to.writeIntBlockDataset(path, subMatrix, nbBlocks, 0);
+						// Because we added extra rows
+						if(resizeNeeded) to.resizeDataset(path, dim[0], dim[1]);
 					}
-					
-					// Because we added extra rows
-					if(resizeNeeded) to.resizeDataset(path, dim[0], dim[1]);
+					else // No chunks = contiguous storage
+					{
+						to.writeIntMatrix(path, from.readIntMatrix(path));
+					}
 				}
 				else // Vector
 				{
 					to.writeIntArray(path, from.readIntArray(path));
 				}
+				flag_copied = true;
 				break;
 			case STRING:
 				if(dim.length > 1 && dim[1] > 0) // Matrix
@@ -896,11 +984,16 @@ public class LoomFile
 				{
 					to.writeStringArray(path, from.readStringArray(path));
 				}
+				flag_copied = true;
+				break;
+			case COMPOUND:
+				System.err.println("This metadata type COMPOUND is not handled... Skipping.");
 				break;
 			default:
 				new ErrorJSON("This metadata type " + h5_class + " is not handled.");
 				break;
 		}
+		return flag_copied;
 	}
     
     public static void copyMetadata(Metadata m, HashSet<Long> toFilter, boolean filterCells, LoomFile from, LoomFile to)
@@ -920,6 +1013,8 @@ public class LoomFile
 					if(writeAll)((IHDF5Writer)to.handle).float32().writeMatrix(m.path, values);
 					else
 					{
+						if(!filterCells) m.nbrow = values.length - toFilter.size();
+						else m.nbcol = values.length - toFilter.size();
 						float[][] towrite = new float[values.length - toFilter.size()][(int)dim[1]];
 						int k = 0;
 						for (int i = 0; i < values.length; i++) 
@@ -931,6 +1026,7 @@ public class LoomFile
 							}
 						}
 						((IHDF5Writer)to.handle).float32().writeMatrix(m.path, towrite);
+						m.size = to.getSizeInBytes(m.path);
 					}
 				}
 				else // Vector
@@ -939,6 +1035,8 @@ public class LoomFile
 					if(writeAll) to.writeFloatArray(m.path, values);
 					else
 					{
+						if(!filterCells) m.nbrow = values.size() - toFilter.size();
+						else m.nbcol = values.size() - toFilter.size();
 						FloatArray64 towrite = new FloatArray64(values.size() - toFilter.size());
 						long k = 0;
 						for (long i = 0; i < values.size(); i++) 
@@ -950,6 +1048,7 @@ public class LoomFile
 							}
 						}
 						to.writeFloatArray(m.path, towrite);
+						m.size = to.getSizeInBytes(m.path);
 					}
 				}
 				break;
@@ -960,6 +1059,8 @@ public class LoomFile
 					if(writeAll)((IHDF5Writer)to.handle).int32().writeMatrix(m.path, values);
 					else
 					{
+						if(!filterCells) m.nbrow = values.length - toFilter.size();
+						else m.nbcol = values.length - toFilter.size();
 						int[][] towrite = new int[values.length - toFilter.size()][(int)dim[1]];
 						int k = 0;
 						for (int i = 0; i < values.length; i++) 
@@ -971,6 +1072,7 @@ public class LoomFile
 							}
 						}
 						((IHDF5Writer)to.handle).int32().writeMatrix(m.path, towrite);
+						m.size = to.getSizeInBytes(m.path);
 					}
 				}
 				else // Vector
@@ -979,6 +1081,8 @@ public class LoomFile
 					if(writeAll) to.writeIntArray(m.path, values);
 					else
 					{
+						if(!filterCells) m.nbrow = values.size() - toFilter.size();
+						else m.nbcol = values.size() - toFilter.size();
 						IntArray64 towrite = new IntArray64(values.size() - toFilter.size());
 						long k = 0;
 						for (long i = 0; i < values.size(); i++) 
@@ -990,6 +1094,7 @@ public class LoomFile
 							}
 						}
 						to.writeIntArray(m.path, towrite);
+						m.size = to.getSizeInBytes(m.path);
 					}
 				}
 				break;
@@ -1004,6 +1109,8 @@ public class LoomFile
 					if(writeAll) to.writeStringArray(m.path, values);
 					else
 					{				
+						if(!filterCells) m.nbrow = values.size() - toFilter.size();
+						else m.nbcol = values.size() - toFilter.size();
 						StringArray64 towrite = new StringArray64(values.size() - toFilter.size());
 						long k = 0;
 						for (long i = 0; i < values.size(); i++) 
@@ -1015,6 +1122,7 @@ public class LoomFile
 							}
 						}
 						to.writeStringArray(m.path, towrite);
+						m.size = to.getSizeInBytes(m.path);
 					}
 				}
 				break;
@@ -1046,126 +1154,56 @@ public class LoomFile
         data.meta.add(new Metadata("/col_attrs/_Depth", Metatype.NUMERIC, MetaOn.CELL, data.depth.size(), 1));
         loom.writeIntArray("/col_attrs/_Detected_Genes", data.detected_genes);
         data.meta.add(new Metadata("/col_attrs/_Detected_Genes", Metatype.NUMERIC, MetaOn.CELL, data.detected_genes.size(), 1));
-        if(data.__no_feature != null) {
-        	loom.writeIntArray("/col_attrs/_No_feature", data.__no_feature);
-        	data.meta.add(new Metadata("/col_attrs/_No_feature", Metatype.NUMERIC, MetaOn.CELL, data.__no_feature.size(), 1));
-        }
-        if(data.__ambiguous != null) {
-        	loom.writeIntArray("/col_attrs/_Ambiguous", data.__ambiguous);
-        	data.meta.add(new Metadata("/col_attrs/_Ambiguous", Metatype.NUMERIC, MetaOn.CELL, data.__ambiguous.size(), 1));
-        }
-        if(data.__too_low_aQual != null) {
-        	loom.writeIntArray("/col_attrs/_Too_low_aQual", data.__too_low_aQual);
-        	data.meta.add(new Metadata("/col_attrs/_Too_low_aQual", Metatype.NUMERIC, MetaOn.CELL, data.__too_low_aQual.size(), 1));
-        }
-        if(data.__not_aligned != null) {
-        	loom.writeIntArray("/col_attrs/_Not_aligned", data.__not_aligned);
-        	data.meta.add(new Metadata("/col_attrs/_Not_aligned", Metatype.NUMERIC, MetaOn.CELL, data.__not_aligned.size(), 1));
-        }
-        if(data.__alignment_not_unique != null) {
-        	loom.writeIntArray("/col_attrs/_Alignment_not_unique", data.__alignment_not_unique);
-        	data.meta.add(new Metadata("/col_attrs/_Alignment_not_unique", Metatype.NUMERIC, MetaOn.CELL, data.__alignment_not_unique.size(), 1));
-        }
         
         // Biotypes/chromosomes
-        for(long j = 0; j < data.mitochondrialContent.size(); j++) data.mitochondrialContent.set(j, (float)(data.mitochondrialContent.get(j) / data.depth.get(j) * 100));
+        for(long j = 0; j < data.mitochondrialContent.size(); j++) 
+        {
+        	if(data.depth.get(j) == 0) data.mitochondrialContent.set(j, 0f);
+        	else data.mitochondrialContent.set(j, (float)(data.mitochondrialContent.get(j) / data.depth.get(j) * 100));
+        }
         loom.writeFloatArray("/col_attrs/_Mitochondrial_Content", data.mitochondrialContent);
  		data.meta.add(new Metadata("/col_attrs/_Mitochondrial_Content", Metatype.NUMERIC, MetaOn.CELL, data.mitochondrialContent.size(), 1));
         
-        for(long j = 0; j < data.proteinCodingContent.size(); j++) data.proteinCodingContent.set(j, (float)(data.proteinCodingContent.get(j) / data.depth.get(j) * 100));
+        for(long j = 0; j < data.proteinCodingContent.size(); j++)        
+        {
+        	if(data.depth.get(j) == 0)  data.proteinCodingContent.set(j, 0f);
+        	else data.proteinCodingContent.set(j, (float)(data.proteinCodingContent.get(j) / data.depth.get(j) * 100));
+        } 
         loom.writeFloatArray("/col_attrs/_Protein_Coding_Content", data.proteinCodingContent);
  		data.meta.add(new Metadata("/col_attrs/_Protein_Coding_Content", Metatype.NUMERIC, MetaOn.CELL, data.proteinCodingContent.size(), 1));
  		
-        for(long j = 0; j < data.ribosomalContent.size(); j++) data.ribosomalContent.set(j, (float)(data.ribosomalContent.get(j) / data.depth.get(j) * 100));
+        for(long j = 0; j < data.ribosomalContent.size(); j++) 
+        {
+        	if(data.depth.get(j) == 0)  data.ribosomalContent.set(j, 0f);
+        	else data.ribosomalContent.set(j, (float)(data.ribosomalContent.get(j) / data.depth.get(j) * 100));
+        }
         loom.writeFloatArray("/col_attrs/_Ribosomal_Content", data.ribosomalContent);
  		data.meta.add(new Metadata("/col_attrs/_Ribosomal_Content", Metatype.NUMERIC, MetaOn.CELL, data.ribosomalContent.size(), 1));
      	
-        // ERCCs
-        if(data.erccs != null) 
-        {
-        	float[][] ercc_matrix = Utils.t(data.erccs.getArray());
-        	((IHDF5Writer)loom.handle).float32().writeMatrix("/col_attrs/_ERCCs", ercc_matrix);
-        	((IHDF5Writer)loom.handle).string().setArrayAttr("/col_attrs/_ERCCs", "colnames", data.erccs.getNames()); // Save the column names as an attribute       	
-        	data.meta.add(new Metadata("/col_attrs/_ERCCs", Metatype.NUMERIC, MetaOn.CELL, ercc_matrix.length, ercc_matrix[0].length));
-        }
-        
         // Genes and Gene annotations     
-        if(!data.removed.isEmpty()) // If gene annotations to remove from final matrix
-        {
-        	long writtenRows = 0;
-        	long nbRows = loom.getDimensions()[0]; // Know the actual size of the array
-        	StringArray64 genes = new StringArray64(nbRows);
-        	StringArray64 ens = new StringArray64(nbRows);
-        	DoubleArray64 sums = new DoubleArray64(nbRows);
-        	LongArray64 _sumExonLength = new LongArray64(nbRows);
-        	StringArray64 _biotypes = new StringArray64(nbRows);
-        	StringArray64 _chromosomes = new StringArray64(nbRows);
-        	for(long i = 0; i < Parameters.nGenes; i++)
-        	{
-        		if(!data.removed.contains(i))
-        		{
-        			genes.set(writtenRows, data.gene_names.get(i));
-        			ens.set(writtenRows, data.ens_names.get(i));
-        			sums.set(writtenRows, data.sum.get(i));
-                	_sumExonLength.set(writtenRows, data.sumExonLength.get(i));
-                	_biotypes.set(writtenRows, data.biotypes.get(i));
-                	_chromosomes.set(writtenRows, data.chromosomes.get(i));
-        			writtenRows++;
-        		}
-        	}
-        	//HDF5GenericStorageFeatureBuilder features = new HDF5GenericStorageFeatureBuilder();
-            //features.noScaling().datasetReplacementEnforceKeepExisting().deflateLevel((byte)2);
-        	loom.writeStringArray("/row_attrs/Gene", genes); // HGNC names
-        	data.meta.add(new Metadata("/row_attrs/Gene", Metatype.STRING, MetaOn.GENE, 1, genes.size())); 	
-        	loom.writeStringArray("/row_attrs/Accession", ens); // EnsemblIDs
-            data.meta.add(new Metadata("/row_attrs/Accession", Metatype.STRING, MetaOn.GENE, 1, ens.size()));
-        	// Stable Ids
-        	LongArray64 stable_ids = new LongArray64(ens.size());
-        	for(long i = 0; i < stable_ids.size(); i++) stable_ids.set(i, i);
-        	loom.writeLongArray("/row_attrs/_StableID", stable_ids);
-        	data.meta.add(new Metadata("/row_attrs/_StableID", Metatype.NUMERIC, MetaOn.GENE, 1, stable_ids.size()));
-            // We do not store alt names in the Loom file 
-            loom.writeDoubleArray("/row_attrs/_Sum", sums);
-        	data.meta.add(new Metadata("/row_attrs/_Sum", Metatype.NUMERIC, MetaOn.GENE, 1, sums.size()));
-        	loom.writeLongArray("/row_attrs/_SumExonLength", _sumExonLength);
-        	data.meta.add(new Metadata("/row_attrs/_SumExonLength", Metatype.NUMERIC, MetaOn.GENE, 1, _sumExonLength.size()));	
-        	loom.writeStringArray("/row_attrs/_Biotypes", _biotypes);
-        	Metadata m = new Metadata("/row_attrs/_Biotypes", Metatype.DISCRETE, MetaOn.GENE, 1, _biotypes.size(), _biotypes);
-        	m.fillMap();
-        	m.values = null;
-        	data.meta.add(m);    	
-        	loom.writeStringArray("/row_attrs/_Chromosomes", _chromosomes);
-        	m = new Metadata("/row_attrs/_Chromosomes", Metatype.DISCRETE, MetaOn.GENE, 1, _chromosomes.size(), _chromosomes);
-        	m.fillMap();
-        	m.values = null;
-        	data.meta.add(m);
-        }
-        else // Simply write the full thing
-        {
-        	loom.writeStringArray("/row_attrs/Gene", data.gene_names); // HGNC names
-        	data.meta.add(new Metadata("/row_attrs/Gene", Metatype.STRING, MetaOn.GENE, 1, data.gene_names.size()));
-        	loom.writeStringArray("/row_attrs/Accession", data.ens_names);  // EnsemblIDs
-        	data.meta.add(new Metadata("/row_attrs/Accession", Metatype.STRING, MetaOn.GENE, 1, data.ens_names.size()));
-        	// Stable Ids
-        	LongArray64 stable_ids = new LongArray64(data.ens_names.size());
-        	for(long i = 0; i < stable_ids.size(); i++) stable_ids.set(i, i);
-        	loom.writeLongArray("/row_attrs/_StableID", stable_ids);
-        	data.meta.add(new Metadata("/row_attrs/_StableID", Metatype.NUMERIC, MetaOn.GENE, 1, stable_ids.size()));
-        	// We do not store alt names in the Loom file 
-        	loom.writeDoubleArray("/row_attrs/_Sum", data.sum);
-        	data.meta.add(new Metadata("/row_attrs/_Sum", Metatype.NUMERIC, MetaOn.GENE, 1, data.sum.size()));
-        	loom.writeLongArray("/row_attrs/_SumExonLength", data.sumExonLength);
-        	data.meta.add(new Metadata("/row_attrs/_SumExonLength", Metatype.NUMERIC, MetaOn.GENE, 1, data.sumExonLength.size()));
-        	loom.writeStringArray("/row_attrs/_Biotypes", data.biotypes);
-        	Metadata m = new Metadata("/row_attrs/_Biotypes", Metatype.DISCRETE, MetaOn.GENE, 1, data.biotypes.size(), data.biotypes);
-        	m.fillMap();
-        	m.values = null;
-        	data.meta.add(m);
-        	loom.writeStringArray("/row_attrs/_Chromosomes", data.chromosomes);
-        	m = new Metadata("/row_attrs/_Chromosomes", Metatype.DISCRETE, MetaOn.GENE, 1, data.chromosomes.size(), data.chromosomes);
-        	m.fillMap();
-        	m.values = null;
-        	data.meta.add(m);
-        }
+ 		loom.writeStringArray("/row_attrs/Gene", data.gene_names); // HGNC names
+    	data.meta.add(new Metadata("/row_attrs/Gene", Metatype.STRING, MetaOn.GENE, 1, data.gene_names.size()));
+    	loom.writeStringArray("/row_attrs/Accession", data.ens_names);  // EnsemblIDs
+    	data.meta.add(new Metadata("/row_attrs/Accession", Metatype.STRING, MetaOn.GENE, 1, data.ens_names.size()));
+    	// Stable Ids
+    	LongArray64 stable_ids = new LongArray64(data.ens_names.size());
+    	for(long i = 0; i < stable_ids.size(); i++) stable_ids.set(i, i);
+    	loom.writeLongArray("/row_attrs/_StableID", stable_ids);
+    	data.meta.add(new Metadata("/row_attrs/_StableID", Metatype.NUMERIC, MetaOn.GENE, 1, stable_ids.size()));
+    	// We do not store alt names in the Loom file 
+    	loom.writeDoubleArray("/row_attrs/_Sum", data.sum);
+    	data.meta.add(new Metadata("/row_attrs/_Sum", Metatype.NUMERIC, MetaOn.GENE, 1, data.sum.size()));
+    	loom.writeLongArray("/row_attrs/_SumExonLength", data.sumExonLength);
+    	data.meta.add(new Metadata("/row_attrs/_SumExonLength", Metatype.NUMERIC, MetaOn.GENE, 1, data.sumExonLength.size()));
+    	loom.writeStringArray("/row_attrs/_Biotypes", data.biotypes);
+    	Metadata m = new Metadata("/row_attrs/_Biotypes", Metatype.DISCRETE, MetaOn.GENE, 1, data.biotypes.size(), data.biotypes);
+    	m.fillMap();
+    	m.values = null;
+    	data.meta.add(m);
+    	loom.writeStringArray("/row_attrs/_Chromosomes", data.chromosomes);
+    	m = new Metadata("/row_attrs/_Chromosomes", Metatype.DISCRETE, MetaOn.GENE, 1, data.chromosomes.size(), data.chromosomes);
+    	m.fillMap();
+    	m.values = null;
+    	data.meta.add(m);
     }
 }

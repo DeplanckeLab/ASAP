@@ -4,7 +4,7 @@ args <- commandArgs(trailingOnly = TRUE)
 
 ### Libraries
 require(jsonlite)
-require(loomR) # For handling Loom files
+source("hdf5_lib.R")
 
 ### Default Parameters
 set.seed(42)
@@ -12,18 +12,8 @@ input_matrix_filename <- args[1]
 output_dir <- args[2]
 std_method_name <- args[3]
 output_matrix_dataset <- args[4]
-to.transpose <- T # Do I need to transpose the matrix in the Loom
 toKeep <- NULL
-data.parsed <- data.frame()
-data.gene.length <- NULL
-data.sum <- NULL
-data.ercc <- NULL
-nber_genes <- 0
-nber_cells <- 0
-nber_zeros <- 0
-
-### Loom Handling
-chunk.dims_param = c(256, 256)
+time_idle <- 0
 
 #### Functions ####
 LogNorm <- function(data, scale_factor, display_progress = TRUE) {
@@ -34,125 +24,36 @@ FastRowScale <- function(mat, scale = TRUE, center = TRUE, scale_max = 10, displ
   .Call('_Seurat_FastRowScale', PACKAGE = 'Seurat', mat, scale, center, scale_max, display_progress)
 }
 
-# Because there is a bug with the name args and I don't need Regressing out at this stage
-ScaleData.loom <- function(object, name = 'layers/scale_data', do.scale = TRUE, do.center = TRUE, scale.max = 10, chunk.size = 1000, normalized.data = 'layers/norm_data', overwrite = FALSE, display.progress = TRUE, dtype = h5types$float, chunk.dims = c(256, 256)) {
-  # Run Scaling
-  object$apply(
-    name = name,
-    FUN = function(mat) {
-      return(t(x = FastRowScale(
-        mat = t(x = mat),
-        scale = do.scale,
-        center = do.center,
-        scale_max = scale.max,
-        display_progress = F
-      )))
-    },
-    MARGIN = 1,
-    chunk.size = chunk.size,
-    dataset.use = normalized.data,
-    overwrite = overwrite,
-    display.progress = display.progress,
-    dtype = dtype,
-    chunk.dims = chunk.dims
-  )
-  # Clean up
-  gc(verbose = FALSE)
-  invisible(x = object)
-}
-
-# Because there is a bug with the name args
-NormalizeData.loom <- function(object, scale.factor = 1e4, chunk.size = 1000, name = 'layers/norm_data', dataset.use = 'matrix', display.progress = TRUE, overwrite = FALSE, dtype = h5types$float, chunk.dims = c(256, 256)) {
-  # Run Normalization
-  object$apply(
-    name = name,
-    FUN = function(mat) {
-      return(t(x = as.matrix(x = LogNorm(
-        data = Matrix(data = t(x = mat), sparse = TRUE),
-        scale_factor = scale.factor,
-        display_progress = FALSE
-      ))))
-    },
-    MARGIN = 2,
-    chunk.size = chunk.size,
-    dataset.use = dataset.use,
-    overwrite = overwrite,
-    display.progress = display.progress,
-    dtype = dtype,
-    chunk.dims = chunk.dims
-  )
-  # Clean up
-  gc(verbose = FALSE)
-  invisible(x = object)
-}
-
-error.json <- function(displayed) {
-  stats <- list()
-  stats$displayed_error = displayed
-  write(toJSON(stats, method="C", auto_unbox=T), file = paste0(output_dir,"/output.json"), append=F)
-  stop(displayed)
-}
-
-# Open the Loom file while handling potential locking
-open_with_lock <- function(loom_filename, mode) {
-  repeat{ # Handle the lock of the file
-    isLocked <- F
-    tryCatch({
-      data.loom <- connect(filename = loom_filename, mode = mode)
-    }, error = function(err) {
-      if(grepl("unable to lock file", err$message)) isLocked <<- T
-      else error.json(err$message)
-    })
-    if(!isLocked) return(data.loom)
-    else {
-      message("Sleeping 1sec for file lock....")
-      time_idle <<- time_idle + 1
-      Sys.sleep(1)
-    }
-  }
-}
-
-# Copy the old Loom (we need to lock the file, so nobody writes in it while we copy)
-data.loom <- open_with_lock(input_matrix_filename, "r") # Block access to the file (nobody can write while we copy)
-if(std_method_name != "seurat") { 
-  data.parsed <- as.data.frame(t(data.loom$matrix[, ])) # t() because loomR returns the t() of the correct matrix we want
-} else file.copy(from = input_matrix_filename, to = paste0(output_dir, "/output.loom"), overwrite = T, recursive = F, copy.mode = T, copy.date = F)
+# Read Loom
+data.loom <- open_with_lock(input_matrix_filename, "r") # Block access to the file (nobody can write if we copy)
+data.parsed <- fetch_dataset(data.loom, "/matrix", transpose = T) # t() because loomR returns the t() of the correct matrix we want
 if(std_method_name %in% c("tpm", "rpkm")) {
-  data.gene.length <- data.loom$row.attrs$`_SumExonLength`[]
+  data.gene.length <- fetch_dataset(data.loom, "/row_attrs/_SumExonLength")
   toKeep <- data.gene.length > 0
   data.gene.length[!toKeep] = NA
 }
-if(std_method_name %in% c("cpm", "tpm", "rpkm")) data.sum <- data.loom$col.attrs$`_Depth`[]
+if(std_method_name %in% c("cpm", "tpm", "rpkm")) data.sum <- fetch_dataset(data.loom, "/col_attrs/_Depth")
 if(std_method_name == "ruvg") {
-  if(!data.loom$exists("/col_attrs/_ERCCs")) error.json(displayed = "RUVg method can only be ran with ERCCs (spike-ins) used as 'negative control genes'")
-  data.ercc <- as.data.frame(data.loom$col.attrs$`_ERCCs`[, ])
-  if(nrow(data.ercc) == 0) error.json(displayed = "RUVg method can only be ran with ERCCs (spike-ins) used as 'negative control genes'")
+  data.ercc <- fetch_dataset(data.loom, "/col_attrs/_ERCCs")
+  if(is.null(data.ercc) || nrow(data.ercc) == 0) error.json(displayed = "RUVg method can only be ran with ERCCs (spike-ins) used as 'negative control genes'")
 }
-data.loom$close_all()
-
-### Functions
-error.json <- function(displayed) {
-  stats <- list()
-  stats$displayed_error = displayed
-  write(toJSON(stats, method="C", auto_unbox=T), file = paste0(output_dir,"/output.json"), append=F)
-  stop(displayed)
-}
+close_all()
 
 ### Run Normalization algorithms
 if (std_method_name == "log"){ # default []
-  data.out = sign(data.parsed) * log2(1 + abs(data.parsed)) # Take into account normalized data with negative values
+  data.out = t(sign(data.parsed) * log2(1 + abs(data.parsed))) # Take into account normalized data with negative values
 } else  if (std_method_name == "voom"){ # Default []
   require(limma)
-  data.out = voom(counts=data.parsed, normalize.method="quantile", plot=F)$E
+  data.out = t(voom(counts=data.parsed, normalize.method="quantile", plot=F)$E)
 } else if (std_method_name == "cpm"){ # default []
   data.out <- 10^6 * t(data.parsed) / data.sum
-  to.transpose = F
+  data.out[is.na(data.out)] <- 0 # If data.sum = 0 it means that the full col is 0 no?
 } else if (std_method_name == "tpm"){ # default []
   data.out <- t(apply(data.parsed, 2, function(x) x / data.gene.length) * 10^6) / data.sum
-  to.transpose = F
+  data.out[is.na(data.out)] <- 0 # If data.sum = 0 it means that the full col is 0 no?
 } else if (std_method_name == "rpkm"){ # default [""]
   data.out <- 10^9 * t(apply(data.parsed, 2, function(x) x / data.gene.length)) / data.sum
-  to.transpose = F
+  data.out[is.na(data.out)] <- 0 # If data.sum = 0 it means that the full col is 0 no?
 } else if (std_method_name == "deseq"){ # default []
   require(DESeq2)
   data.colData = data.frame(row.names=colnames(data.parsed))
@@ -160,11 +61,11 @@ if (std_method_name == "log"){ # default []
   tryCatch({
     data.dds <<- estimateSizeFactors(data.dds)
   }, error = function(err) {
-    if(grepl("every gene contains at least one zero", err$message)) error.json("Every gene contains at least one zero, cannot compute log geometric means for estimating size factors.")
+    if(grepl("every gene contains at least one zero", err$message)) error.json("Every gene contains at least one zero, cannot compute log geometric means for estimating size factors. Maybe filter more your dataset to remove low expressed genes/weak cells.")
     error.json(err$message)
   })
   data.out <- counts(data.dds, normalized=TRUE)
-  data.out <- sign(data.out) * log2(1 + abs(data.out))
+  data.out <- t(sign(data.out) * log2(1 + abs(data.out)))
 } else if (std_method_name == "ruvg"){
   # Packages
   require(RUVSeq)
@@ -189,7 +90,7 @@ if (std_method_name == "log"){ # default []
   data.out <- sign(data.out) * log2(1 + abs(data.out))
 
   # Remove ERCC
-  data.out <- data.out[-data.ercc,]
+  data.out <- t(data.out[-data.ercc,])
 } else if(std_method_name == "seurat"){
   # Packages
   require(Seurat) # v3
@@ -211,53 +112,15 @@ if (std_method_name == "log"){ # default []
   scale.max_param = args[8]
   if(!is.null(scale.max_param) & !is.na(scale.max_param)) scale.max_param = as.numeric(scale.max_param)
   else scale.max_param = 10
-  
-  # Open the copy in writing
-  data.loom <- open_with_lock(paste0(output_dir, "/output.loom"), "r+")
-  
-  if(do_scale_param | do_center_param){
-    layer_norm = "layers/tmp"
-    if(data.loom$exists(layer_norm)) data.loom$link_delete(layer_norm)
-    layer_scale = output_matrix_dataset
-  } else {
-    layer_norm = output_matrix_dataset
-  }
-  
-  NormalizeData.loom(object = data.loom, name = layer_norm, chunk.dims = chunk.dims_param, scale.factor = scale.factor_param, overwrite = T, display.progress = T, dataset.use = "matrix")
-  if(do_scale_param | do_center_param) {
-    ScaleData.loom(object = data.loom, name = layer_scale, chunk.dims = chunk.dims_param, do.scale = do_scale_param, do.center = do_center_param, scale.max = scale.max_param, normalized.data = layer_norm, overwrite = T, display.progress = T)
-    data.loom$link_delete(layer_norm)
-  }
-  
-  # Get Stats info
-  nber_genes <- data.loom[[output_matrix_dataset]]$dims[2]
-  nber_cells <- data.loom[[output_matrix_dataset]]$dims[1]
-  nber_zeros <- sum(data.loom[[output_matrix_dataset]][,] == 0, na.rm = T)
-  
-  # Close the Loom file
-  data.loom$close_all()
+
+  data.out <- as.matrix(LogNorm(data = Matrix(data = t(x = data.parsed), sparse = T), scale_factor = scale.factor_param, display_progress = F))
+  if(do_scale_param | do_center_param) data.out <- FastRowScale(mat = data.out, scale = do_scale_param, center = do_center_param, scale_max = scale.max_param, display_progress = F)
 } else error.json("This normalization method is not implemented")
 
-# Seurat directly modify the loom file, if not Seurat, add the layer to the data (original loom file)
-if(std_method_name != "seurat"){
-  data.loom <- open_with_lock(input_matrix_filename, "r+")
-  if(data.loom$exists(output_matrix_dataset)) data.loom$link_delete(output_matrix_dataset) # Remove existing dimension reduction with same name
-  if(to.transpose){
-    data.loom[[output_matrix_dataset]] = t(data.out)
-  } else {
-    data.loom[[output_matrix_dataset]] = data.out
-  }
-  nber_genes <- data.loom[[output_matrix_dataset]]$dims[2]
-  nber_cells <- data.loom[[output_matrix_dataset]]$dims[1]
-  nber_zeros <- sum(data.loom[[output_matrix_dataset]][,] == 0, na.rm = T)
-  data.loom$close_all()
-} else { # If Seurat, I need to put back the created annotation in the original file
-  # Run Java for copying metadata from 2 loom files
-  system(paste0("java -jar ASAP.jar -T CopyMetaData -loomFrom ", output_dir, "/output.loom -loomTo ", input_matrix_filename, " -meta ", output_matrix_dataset))
-  
-  # Delete the temporary Loom
-  file.remove(paste0(output_dir, "/output.loom"))
-}
+# Writing the dataset in the loom file
+data.loom <- open_with_lock(input_matrix_filename, "r+")
+add_matrix_dataset(handle = data.loom, dataset_path = output_matrix_dataset, dataset_object = data.out)
+close_all()
 
 # Extra filtering step for TPM and RPKM of non-annotated genes
 if(!is.null(toKeep) & sum(toKeep, na.rm = T) != nrow(data.parsed)){
@@ -279,8 +142,7 @@ if(!is.null(toKeep) & sum(toKeep, na.rm = T) != nrow(data.parsed)){
 } else {
   # Generate default JSON file
   stats <- list()
-  stats$nber_rows = nber_genes
-  stats$nber_cols = nber_cells
-  stats$nber_zeros = nber_zeros
+  stats$nber_rows = ncol(data.out)
+  stats$nber_cols = nrow(data.out)
   write(jsonlite::toJSON(stats, method="C", auto_unbox=T, digits = NA), file = paste0(output_dir, "/output.json"), append=F)
 }

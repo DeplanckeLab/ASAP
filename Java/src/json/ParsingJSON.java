@@ -17,6 +17,7 @@ import hdf5.loom.LoomData;
 import hdf5.loom.LoomFile;
 import model.Metadata;
 import model.Parameters;
+import parsing.model.FileType;
 
 public class ParsingJSON
 {
@@ -44,19 +45,21 @@ public class ParsingJSON
 
     	data.meta.forEach((m)->m.size = loom.getSizeInBytes(m.path));
     	
+    	// Prepare String
     	StringBuilder sb = new StringBuilder();
 	    sb.append("{\"detected_format\":\"").append(Parameters.fileType).append("\",");
+	    if(Parameters.fileType == FileType.LOOM) sb.append("\"loom_version\":\"").append(Parameters.loomVersion).append("\",");
     	if(message != null) sb.append("\"message\":\"").append(message).append("\",");
-    	sb.append("\"nber_rows\":").append(data.nber_genes - data.removed.size()).append(",");
+    	sb.append("\"nber_rows\":").append(data.nber_genes).append(",");
     	sb.append("\"nber_cols\":").append(data.nber_cells).append(",");
     	sb.append("\"nber_not_found_genes\":").append(data.nber_not_found_genes).append(",");
     	sb.append("\"nber_zeros\":").append(data.nber_zeros).append(",");
-    	sb.append("\"nber_ercc\":").append(data.nber_ercc).append(",");
     	if(data.is_count_table && empty_columns != 0) sb.append("\"empty_columns\":").append(empty_columns).append(",");
     	sb.append("\"is_count_table\":").append(data.is_count_table?1:0).append(",");	
     	// Handle Metadata generated
         sb.append(Metadata.toString(data.meta)).append("}");
         	
+        // Write output JSON
         try
         {      	
     		BufferedWriter bw = new BufferedWriter(new FileWriter(Parameters.outputFolder + "output.json"));

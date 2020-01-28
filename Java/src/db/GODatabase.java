@@ -27,134 +27,35 @@ public class GODatabase
    private static HashMap<String, GOTerm> termsMF = null;
    private static HashMap<String, GOTerm> termsCC = null;
 
-   /*public static void main(String[] args) throws IOException
+   public static void generateGODB() 
    {
-	   ArrayList<Specie> species = fetchSpecies();
-	   System.out.println(species.size());
+	   // Connect to ASAP DB
 	   
-
-	   BufferedWriter bw = new BufferedWriter(new FileWriter("go_species.txt"));
-	   bw.write("id_species\tcommon_name\tncbi_taxa_id\n");
-	   for(Specie s:species)
-	   {
-		   bw.write(s.genus + "_" + s.species + "\t" +s.common_name + "\t" + s.ncbi_taxa_id + "\n");
-		   System.out.println(s.genus + "_" + s.species + "\t" +s.common_name + "\t" + s.ncbi_taxa_id);
-		   //generateGODB("C:/Users/vincent/Dropbox/ASAP/Java/Genesets/go", Integer.parseInt(s.ncbi_taxa_id));
-	   }
-	   DBManager.disconnect();
-	   bw.close();
-	   System.out.println(DBManager.species.length);
-   }
-   
-   public static ArrayList<Integer> getTaxons()
-   {
-	   ArrayList<Integer> res = new ArrayList<>();
-	   try
-	   {
-		   BufferedReader br = new BufferedReader(new FileReader("go_species.txt"));
-		   String line = br.readLine(); // header
-		   line = br.readLine();
-		   while(line != null)
-		   {
-			   String[] tokens = line.split("\t");
-			   res.add(Integer.parseInt(tokens[2]));
-			   line = br.readLine();
-		   }
-		   br.close();
-	   }
-	   catch(IOException ioe)
-	   {
-		   ioe.printStackTrace();
-	   }
-	   return res;
-   }*/
-
-   public static ArrayList<Specie> fetchSpecies()
-   {
-	   /*DBManager.JDBC_DRIVER = "com.mysql.jdbc.Driver";
-	   DBManager.URL = "jdbc:mysql://mysql.ebi.ac.uk:4085/go_latest?user=go_select&password=amigo";
 	   DBManager.connect();
-	   ArrayList<Specie> species = new ArrayList<Specie>();
-	   Statement stmt = null;
-	   HashSet<String> toCheck = new HashSet<String>();
-	   for(String s:DBManager.species) {toCheck.add(s.toLowerCase());}
-	   try
-	   {   
-		   	stmt = DBManager.conn.createStatement();
-		   	String sql = "SELECT DISTINCT * FROM species";
-		   	ResultSet rs = stmt.executeQuery(sql);
-		   	while(rs.next()) 
-		    {
-		   		Specie s = new Specie();
-		    	s.species = rs.getString("species");
-		    	if(s.species != null) s.species = s.species.toLowerCase().replaceAll(" ", "_");
-		    	s.common_name = rs.getString("common_name");
-		    	if(s.common_name != null) s.common_name = s.common_name;
-		    	s.genus = rs.getString("genus");
-		    	if(s.genus != null) s.genus = s.genus.toLowerCase().replaceAll(" ", "_");
-		    	s.ncbi_taxa_id = rs.getString("ncbi_taxa_id");
-		    	s.taxonomic_rank = rs.getString("taxonomic_rank");
-		    	if(s.ncbi_taxa_id.equals("1868482")) s.genus = "tarsius"; // Specific case that differs with Ensembl for tarsius_syrichta (vs carlito_syrichta in GO)
-		    	if(s.ncbi_taxa_id.equals("9615")) s.species = "familiaris"; // Specific case that differs with Ensembl for canus_familiaris (vs canis_lupus_familiaris in GO)
-		    	if(toCheck.contains(s.genus + "_" + s.species)) species.add(s);
-		    }
-		    rs.close();
-	   }
-	   catch(Exception e)
-	   {
-		   e.printStackTrace();
-	   }
-	   finally
-	   {
-		   try
-		   {
-			   if(stmt!=null) stmt.close();
-		   }
-		   catch(SQLException se2){ }// nothing we can do
-	   }
+	   HashMap<Integer, Integer> taxonsInDB = DBManager.listAllOrganisms();
+	   System.out.println("There are " + taxonsInDB.size() + " organisms in ASAP DB.");
 	   DBManager.disconnect();
 	   
-	   // Check if I found everything
-	   for(String s:DBManager.species) 
-	   {
-		   boolean found = false;
-		   for(Specie sp:species)
-		   {
-			   if(s.equals(sp.genus+"_"+sp.species)) found = true;
-		   }
-		   if(!found) System.err.println(s + " IS NOT FOUND!!");
-	   }
-	   return species;*/
-	   return null;
-   }
-   
-   public static void generateGODBv2(String outputGMTFolder, String species) throws IOException
-   {
-	   int taxonId = 0;
-	   if(species.equals("hsa")) taxonId = 9606;
-	   if(species.equals("mmu")) taxonId = 10090;
-	   if(!outputGMTFolder.endsWith("/")) outputGMTFolder += "/";
+	   // Connect to GO DB
+	   DBManager.JDBC_DRIVER = "com.mysql.jdbc.Driver";
+	   DBManager.URL = "jdbc:mysql://mysql-eg-publicsql.ebi.ac.uk:4157/go_latest?user=go_select";
 	   DBManager.connect();
-	   //listTables();
+	   
+	   // Get all GO terms (common for all taxons)
 	   fetchTerms();
 	   System.out.println(termsBP.size() + " GO BP terms were fetched.");
 	   System.out.println(termsMF.size() + " GO MF terms were fetched.");
 	   System.out.println(termsCC.size() + " GO CC terms were fetched.");
 	   
-	   long t1 = System.currentTimeMillis();
-	   ProgressBar p = new ProgressBar("GO Cellular Component", termsCC.size());
-	   for(String goterm:termsCC.keySet())
+	   /*for(String goterm:termsCC.keySet())
 	   {
 		   GOTerm go = termsCC.get(goterm);
 		   go.genes = fetchGOGenesDirect(go.id, taxonId);
 		   go.descendants = fetchDescendant(go.id);
 		   p.increment();
 	   }
-	   p.close();
-	   
-	   // TODO add genes of descendants
-	   
-	   System.out.println("GO CC processing time: "+ Utils.toReadableTime(System.currentTimeMillis() - t1));
+		//GODatabase.generateGODB(Parameters.outputFolder, Parameters.taxon);
+	   generateGODB(Parameters.outputFolder + "go." + taxon + ".gmt", int taxonId)*/
    }
    
    public static void generateGODB(String outputGMTFolder, int taxonId)

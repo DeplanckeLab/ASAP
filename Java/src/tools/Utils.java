@@ -1,7 +1,9 @@
 package tools;
 
 
+import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.text.DecimalFormat;
@@ -10,10 +12,14 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.stream.IntStream;
+
+import json.ErrorJSON;
 
 public class Utils 
 {
@@ -34,6 +40,21 @@ public class Utils
 		DecimalFormatSymbols symbols = DecimalFormatSymbols.getInstance();
 		symbols.setDecimalSeparator('.');
 		df = new DecimalFormat(sb.toString(), symbols);
+	}
+	
+	public static void writeJSON(StringBuilder content, String outputJSONFile)
+	{
+		if(outputJSONFile == null) System.out.println(content.toString());
+		else
+		{
+			try
+			{
+	    		BufferedWriter bw = new BufferedWriter(new FileWriter(outputJSONFile));
+	    		bw.write(content.toString());
+	        	bw.close();
+			}
+			catch(IOException ioe) { new ErrorJSON(ioe.getMessage()); }
+		}
 	}
 
 	public static double[] p_adjust(final double[] pvalues, String adjMethod)
@@ -150,7 +171,7 @@ public class Utils
         return adj_p_value;
     }
 	
-	public static double log2(float x)
+	public static double log2(double x)
 	{
 	    return Math.log(x) / LOG2;
 	}
@@ -167,6 +188,7 @@ public class Utils
 	
 	public static String format(String n)
 	{
+		if(n.equals("NaN")) return "null";
 		return Utils.format(Double.parseDouble(n));
 	}
 	
@@ -245,6 +267,13 @@ public class Utils
 	{
 		double sum = 0.0;
 		for(double a : data) sum += a;
+		return sum/data.length;
+	}
+	
+	public static float mean(float[] data)
+	{
+		float sum = 0;
+		for(float a : data) sum += a;
 		return sum/data.length;
 	}
 	
@@ -394,6 +423,19 @@ public class Utils
 		return sortedIndexes;
 	}
 	
+	public static int[] order(int[] array) // return array of indexes
+	{
+		int[] sortedIndexes = IntStream.range(0, array.length).boxed().sorted((i, j) -> array[i] - array[j]).mapToInt(ele -> ele).toArray();
+		return sortedIndexes;
+	}
+	
+	public static int[] order(double[] array, boolean reversed) // return array of indexes
+	{
+		HashMap<Integer, Double> map = new HashMap<>(array.length);
+		for (int i = 0; i < array.length; i++) map.put(i, array[i]); // Copy input
+		return sortD(map, reversed);
+	}
+	
 	public static boolean contains(String[] array, String value)
 	{
 		for(String val:array) if(val.equals(value)) return true;
@@ -432,6 +474,36 @@ public class Utils
 		else Collections.sort(values);
 		String[] sortedIndexes = new String[values.size()];
 		for(String key:map.keySet()) 
+		{
+			int index = values.indexOf(map.get(key));
+			sortedIndexes[index] = key;
+			values.set(index, null);
+		}
+		return sortedIndexes;
+	}
+	
+	public static Integer[] sortF(HashMap<Integer, Float> map, boolean reversed)
+	{
+		List<Float> values = new ArrayList<>(map.values());
+		if(reversed) Collections.sort(values, Collections.reverseOrder());
+		else Collections.sort(values);
+		Integer[] sortedIndexes = new Integer[values.size()];
+		for(Integer key:map.keySet()) 
+		{
+			int index = values.indexOf(map.get(key));
+			sortedIndexes[index] = key;
+			values.set(index, null);
+		}
+		return sortedIndexes;
+	}
+	
+	public static int[] sortD(HashMap<Integer, Double> map, boolean reversed)
+	{
+		List<Double> values = new ArrayList<>(map.values());
+		if(reversed) Collections.sort(values, Collections.reverseOrder());
+		else Collections.sort(values);
+		int[] sortedIndexes = new int[values.size()];
+		for(Integer key:map.keySet()) 
 		{
 			int index = values.indexOf(map.get(key));
 			sortedIndexes[index] = key;

@@ -252,22 +252,47 @@ public class Metadata
 			}
 			sb.append("]");
 	
-			if(cellNames != null)
-			{
-				sb.append(",\"cells\":[");
-				String prefix = "\"";
-				long cnt = 0; // To count the number of values to store
-				for(String val:cellNames) 
-				{
-					sb.append(prefix);
-					prefix = "\",\"";
-					sb.append(val);
-					cnt++;
-					if(cnt >= max_nb_values) break;
-				}
-				sb.append("\"]");
-			}
+			addCellNames(sb, ",", cellNames, max_nb_values);
 		}
 		sb.append("}");
 	}
+	
+	public static void addCellNames(StringBuilder sb, String pre, StringArray64 cellNames, long max_nb_values)
+	{
+		if(cellNames != null)
+		{
+			sb.append(pre).append("\"cells\":[");
+			String prefix = "\"";
+			long cnt = 0; // To count the number of values to store
+			for(String val:cellNames) 
+			{
+				sb.append(prefix);
+				prefix = "\",\"";
+				sb.append(val);
+				cnt++;
+				if(cnt >= max_nb_values) break;
+			}
+			sb.append("\"]");
+		}
+	}
+	
+	public static void addGeneNames(StringBuilder sb, String pre, StringArray64 geneNames, long max_nb_values)
+	{
+		if(geneNames != null)
+		{
+			sb.append(pre).append("\"genes\":[");
+			String prefix = "\"";
+			long cnt = 0; // To count the number of values to store
+			for(String val:geneNames) 
+			{
+				sb.append(prefix);
+				prefix = "\",\"";
+				sb.append(val);
+				cnt++;
+				if(cnt >= max_nb_values) break;
+			}
+			sb.append("\"]");
+		}
+	}
+	
 }

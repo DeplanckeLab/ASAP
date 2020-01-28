@@ -20,7 +20,7 @@ public class HDF5Tools
             	else 
             	{ 
             		LoomFile loom = new LoomFile("r", Parameters.fileName);
-            		if(loom.isLoomFormatOK()) Parameters.fileType = FileType.LOOM;
+            		Parameters.fileType = loom.isLoom();
             		loom.close();
             	}
         	}

@@ -1,10 +1,10 @@
 ### ASAP DE script
-options(echo=TRUE)
+options(echo=TRUE, future.globals.maxSize=100E9) # Second option is for future_sapply (100Gb allowed here)
 args <- commandArgs(trailingOnly = TRUE)
 
 ### Libraries
 require(jsonlite)
-require(loomR) # For handling Loom files
+source("hdf5_lib.R")
 require(ggplot2)
 require(plotly)
 
@@ -37,32 +37,6 @@ FindMarkers.default <- function(object, cells.1 = NULL, cells.2 = NULL, fc.thres
 
 serialize <- function(widget) {
   htmlwidgets:::toJSON2(widget, pretty=TRUE, digits = 3)
-}
-
-error.json <- function(displayed) {
-  stats <- list()
-  stats$displayed_error = displayed
-  write(toJSON(stats, method="C", auto_unbox=T), file = paste0(output_dir,"/output.json"), append=F)
-  stop(displayed)
-}
-
-# Open the Loom file while handling potential locking
-open_with_lock <- function(loom_filename, mode) {
-  repeat{ # Handle the lock of the file
-    isLocked <- F
-    tryCatch({
-      data.loom <- connect(filename = loom_filename, mode = mode)
-    }, error = function(err) {
-      if(grepl("unable to lock file", err$message)) isLocked <<- T
-      else error.json(err$message)
-    })
-    if(!isLocked) return(data.loom)
-    else {
-      message("Sleeping 1sec for file lock....")
-      time_idle <<- time_idle + 1
-      Sys.sleep(1)
-    }
-  }
 }
 
 ### Default Parameters
@@ -104,21 +78,21 @@ time_idle <- 0
 
 ### Open the existing Loom in read-only mode and recuperate the infos (not optimized for OUT-OF-RAM computation)
 data.loom <- open_with_lock(input_matrix_filename, "r")
-if(!data.loom$exists(input_matrix_dataset)) error.json("This dataset does not exist in the Loom file")
-data.parsed <- t(data.loom[[input_matrix_dataset]][, ]) # t() because loomR returns the t() of the correct matrix we want
-if(!data.loom$exists(group_dataset)) error.json(paste0(group_dataset, " does not exist in the Loom file"))
-data.groups <- data.loom[[group_dataset]][]
-if(data.loom$exists("/row_attrs/Accession")) data.ens <- data.loom[["/row_attrs/Accession"]][]
-if(data.loom$exists("/row_attrs/Gene")) data.gene <- data.loom[["/row_attrs/Gene"]][]
+data.parsed <- fetch_dataset(data.loom, input_matrix_dataset, transpose = T)
+data.groups <- fetch_dataset(data.loom, group_dataset)
+data.ens <- fetch_dataset(data.loom, "/row_attrs/Accession")
+data.gene <- fetch_dataset(data.loom, "/row_attrs/Gene")
 if(is.null(batch_dataset) || is.na(batch_dataset) || batch_dataset == "" || batch_dataset == "null"){ 
   data.batch <- NULL
 } else {
   message("Covariates detected. Will add covariates to the model.")
   ### TODO: HANDLE COVARIATES [,,,,,]
   #if (!(std_method_name %in% c('negbinom', 'poisson', 'MAST', "LR")) && !is.null(x = latent.vars)) error.json("'latent.vars' is only used for 'negbinom', 'poisson', 'LR', and 'MAST' tests")
-  data.batch <- data.loom[[batch_dataset]][]
+  data.batch <- fetch_dataset(data.loom, batch_dataset)
 }
-data.loom$close_all()
+close_file(data.loom)
+if(is.null(data.parsed)) error.json("This dataset does not exist in the Loom file")
+if(is.null(data.groups)) error.json(paste0(group_dataset, " does not exist in the Loom file"))
 
 ### Assessing log2ity of the data (could also be ln or log10 that should still be ok)
 is_log2 <- T
@@ -141,8 +115,8 @@ if(group_2 != "null"){
 } else {
   print("One group file found. Performing this group against all other samples [Marker Genes]")
   data.group[data.groups != group_1] <- 2
-  group_2 <- 2
 }
+
 # Filter NA groups
 toKeep = which(!is.na(data.group))
 data.parsed <- data.parsed[,toKeep]
@@ -153,8 +127,8 @@ cells_2 <- data.group == 2
 features = 1:nrow(data.parsed)
 
 ### Check if computable
-if(sum(data.groups == group_1) < 3) error.json("Group 1 should contain at least 3 samples")
-if(sum(data.groups == group_2) < 3) error.json("Group 2 should contain at least 3 samples")
+if(sum(data.group == 1) < 3) error.json("Group 1 should contain at least 3 samples")
+if(sum(data.group == 2) < 3) error.json("Group 2 should contain at least 3 samples")
 
 # [Seurat] Feature selection (based on percentages) to speed up computation
 if(is_count_table | is_log2){ # Because checking genes > 0 as "detected"
@@ -307,8 +281,8 @@ if(std_method_name=="limma"){
   # Create output
   data.out <- matrix(nrow = nrow(data.parsed), ncol = 5)
   colnames(data.out) = c("logFC", "pval", "FDR", "AveG1", "AveG2")
-  data.out[features, "pval"] = future_sapply(X = features, FUN = function(x) return(wilcox.test(data.parsed[x, ] ~ data.colData[, "group"])$p.value))
-  data.out[features, "FDR"] = p.adjust(p = data.out[features, "pval"], method = "fdr")
+  data.out[features, "pval"] <- future_sapply(X = features, FUN = function(x) return(wilcox.test(unlist(data.parsed[x, ]) ~ data.colData[, "group"])$p.value))
+  data.out[features, "FDR"] <- p.adjust(p = data.out[features, "pval"], method = "fdr")
   if(compute_FC) data.out[, "logFC"] <- total.diff
   data.out[, "AveG1"] = rowMeans(data.parsed[, cells_1, drop=F])
   data.out[, "AveG2"] = rowMeans(data.parsed[, cells_2, drop=F])
@@ -327,9 +301,8 @@ if(data.correct > data.incorrect) {
 
 # Open Loom in writing mode for writing results
 data.loom <- open_with_lock(input_matrix_filename, "r+")
-if(data.loom$exists(output_matrix_dataset)) data.loom$link_delete(output_matrix_dataset) # Remove existing dimension reduction with same name
-data.loom[[output_matrix_dataset]] = t(data.out)
-data.loom$close_all()
+add_matrix_dataset(handle = data.loom, dataset_path = output_matrix_dataset, dataset_object = t(data.out))
+close_all()
 
 # Volcano plot
 if(compute_FC){

@@ -44,7 +44,7 @@ public class FileParser
 				{
 					parseText(new BufferedReader(new FileReader(Parameters.fileName)));
 				}
-				catch(NumberFormatException nfe) { new ErrorJSON("Your data matrix contains non-numeric values." + (Parameters.has_header?"":"No header is specified in the options, but maybe there is one?") + (Parameters.name_column == ColumnName.NONE?"":"You did not specify a column with gene_name, but maybe there is one?") + (Parameters.name_column == ColumnName.NONE?"":"You did not specify a column with gene_name, but maybe there is one?") + (Parameters.name_column == ColumnName.FIRST?"":"You specified first column as the one containing gene_name, but maybe it's another one?") + (Parameters.name_column == ColumnName.LAST?"":"You specified last column as the one containing gene_name, but maybe it's another one?")); }
+				catch(NumberFormatException nfe) { new ErrorJSON("Your data matrix contains non-numeric values." + (Parameters.has_header?"":"No header is specified in the options, but maybe there is one?") + (Parameters.name_column == ColumnName.NONE?"":"You did not specify a column with gene_name, but maybe there is one?") + (Parameters.name_column == ColumnName.FIRST?"":"You specified first column as the one containing gene_name, but maybe it's another one?") + (Parameters.name_column == ColumnName.LAST?"":"You specified last column as the one containing gene_name, but maybe it's another one?")); }
 				catch(IOException ioe) { new ErrorJSON("Tried to read your file as a PLAIN TEXT file, but it failed."); }
     			break;
     		case ARCHIVE:
@@ -54,7 +54,7 @@ public class FileParser
 				{
 					parseText(new BufferedReader(new InputStreamReader(CompressionHandler.getReader())));
 				}
-				catch(NumberFormatException nfe) { new ErrorJSON("Your data matrix contains non-numeric values. Did you forget there is a header?", "\"detected_format\":\"" + Parameters.fileType + "\""); }
+				catch(NumberFormatException nfe) { new ErrorJSON("Your data matrix contains non-numeric values. Did you forget there is a header?\",\"detected_format\":\"" + Parameters.fileType); }
 				catch(IOException ioe) { new ErrorJSON("Tried to read your file as a ARCHIVE/COMPRESSED file, but it failed."); }
 				break;
     		case H5_10x:
@@ -89,12 +89,12 @@ public class FileParser
 						nRows = Utils.countNonEmptyLines(new BufferedInputStream(new FileInputStream(Parameters.fileName)));
 						preparseText(nRows, new BufferedReader(new FileReader(Parameters.fileName)));
 					}
-					catch(NumberFormatException nfe) { new ErrorJSON("Your data matrix contains non-numeric values. Did you forget there is a header?", "\"detected_format\":\"" + Parameters.fileType + "\""); }
-					catch(IOException ioe) { new ErrorJSON("Tried to read your file as a PLAIN TEXT file, but it failed.", "\"detected_format\":\"" + Parameters.fileType + "\""); }
+					catch(NumberFormatException nfe) { new ErrorJSON("Your data matrix contains non-numeric values. Did you forget there is a header?\",\"detected_format\":\"" + Parameters.fileType); }
+					catch(IOException ioe) { new ErrorJSON("Tried to read your file as a PLAIN TEXT file, but it failed.\",\"detected_format\":\"" + Parameters.fileType); }
 				}
 				else
 				{
-					if(files.size() == 0) new ErrorJSON("Your archive/compressed file is empty or corrupted.", "\"detected_format\":\"" + Parameters.fileType + "\"");
+					if(files.size() == 0) new ErrorJSON("Your archive/compressed file is empty or corrupted.\",\"detected_format\":\"" + Parameters.fileType);
 					else if(files.size() == 1)
 					{
 						System.out.println("A single file was detected in your archive. Processing automatically the preparsing...");
@@ -104,8 +104,8 @@ public class FileParser
 	    					nRows = Utils.countNonEmptyLines(new BufferedInputStream(CompressionHandler.getReader()));
 	    					preparseText(nRows, new BufferedReader(new InputStreamReader(CompressionHandler.getReader())));
 	    				}
-	    				catch(NumberFormatException nfe) { new ErrorJSON("Your data matrix contains non-numeric values. Did you forget there is a header?", "\"detected_format\":\"" + Parameters.fileType + "\""); }
-	    				catch(IOException ioe) { new ErrorJSON("Tried to read your file as a COMPRESSED/ARCHIVED file, but it failed.", "\"detected_format\":\"" + Parameters.fileType + "\""); }
+	    				catch(NumberFormatException nfe) { new ErrorJSON("Your data matrix contains non-numeric values. Did you forget there is a header?\",\"detected_format\":\"" + Parameters.fileType); }
+	    				catch(IOException ioe) { new ErrorJSON("Tried to read your file as a COMPRESSED/ARCHIVED file, but it failed.\",\"detected_format\":\"" + Parameters.fileType); }
 					}
 					else
 					{
@@ -121,8 +121,8 @@ public class FileParser
 					nRows = Utils.countNonEmptyLines(new BufferedInputStream(CompressionHandler.getReader()));
 					preparseText(nRows, new BufferedReader(new InputStreamReader(CompressionHandler.getReader())));
 				}
-				catch(NumberFormatException nfe) { new ErrorJSON("Your data matrix contains non-numeric values. Did you forget there is a header?", "\"detected_format\":\"" + Parameters.fileType + "\""); }
-				catch(IOException ioe) { new ErrorJSON("Tried to read your file as a COMPRESSED/ARCHIVED file, but it failed.", "\"detected_format\":\"" + Parameters.fileType + "\""); }
+				catch(NumberFormatException nfe) { new ErrorJSON("Your data matrix contains non-numeric values. Did you forget there is a header?\",\"detected_format\":\"" + Parameters.fileType); }
+				catch(IOException ioe) { new ErrorJSON("Tried to read your file as a COMPRESSED/ARCHIVED file, but it failed.\",\"detected_format\":\"" + Parameters.fileType); }
 			}
     	}
     }
@@ -149,12 +149,12 @@ public class FileParser
 				{
 					preparseMeta(new BufferedReader(new FileReader(Parameters.fileName)));
 				}
-				catch(NumberFormatException nfe) { new ErrorJSON("Your metadata matrix contains non-numeric values. Did you forget there is a header?", "\"detected_format\":\"" + Parameters.fileType + "\""); }
-				catch(IOException ioe) { new ErrorJSON("Tried to read your file as a PLAIN TEXT file, but it failed.", "\"detected_format\":\"" + Parameters.fileType + "\""); }
+				catch(NumberFormatException nfe) { new ErrorJSON("Your metadata matrix contains non-numeric values. Did you forget there is a header?\",\"detected_format\":\"" + Parameters.fileType); }
+				catch(IOException ioe) { new ErrorJSON("Tried to read your file as a PLAIN TEXT file, but it failed.\",\"detected_format\":\"" + Parameters.fileType); }
 			}
 			else
 			{
-				if(files.size() == 0) new ErrorJSON("Your archive/compressed file is empty or corrupted.", "\"detected_format\":\"" + Parameters.fileType + "\"");
+				if(files.size() == 0) new ErrorJSON("Your archive/compressed file is empty or corrupted.\",\"detected_format\":\"" + Parameters.fileType);
 				else if(files.size() == 1)
 				{
 					System.out.println("A single file was detected in your archive. Processing automatically the preparsing...");
@@ -163,8 +163,8 @@ public class FileParser
     				{
     					preparseMeta(new BufferedReader(new InputStreamReader(CompressionHandler.getReader())));
     				}
-    				catch(NumberFormatException nfe) { new ErrorJSON("Your metadata matrix contains non-numeric values. Did you forget there is a header?", "\"detected_format\":\"" + Parameters.fileType + "\""); }
-    				catch(IOException ioe) { new ErrorJSON("Tried to read your file as a COMPRESSED/ARCHIVED file, but it failed.", "\"detected_format\":\"" + Parameters.fileType + "\""); }
+    				catch(NumberFormatException nfe) { new ErrorJSON("Your metadata matrix contains non-numeric values. Did you forget there is a header?\",\"detected_format\":\"" + Parameters.fileType); }
+    				catch(IOException ioe) { new ErrorJSON("Tried to read your file as a COMPRESSED/ARCHIVED file, but it failed.\",\"detected_format\":\"" + Parameters.fileType); }
 				}
 				else
 				{
@@ -179,8 +179,8 @@ public class FileParser
 			{
 				preparseMeta(new BufferedReader(new InputStreamReader(CompressionHandler.getReader())));
 			}
-			catch(NumberFormatException nfe) { new ErrorJSON("Your metadata matrix contains non-numeric values. Did you forget there is a header?", "\"detected_format\":\"" + Parameters.fileType + "\""); }
-			catch(IOException ioe) { new ErrorJSON("Tried to read your file as a COMPRESSED/ARCHIVED file, but it failed.", "\"detected_format\":\"" + Parameters.fileType + "\""); }
+			catch(NumberFormatException nfe) { new ErrorJSON("Your metadata matrix contains non-numeric values. Did you forget there is a header?\",\"detected_format\":\"" + Parameters.fileType); }
+			catch(IOException ioe) { new ErrorJSON("Tried to read your file as a COMPRESSED/ARCHIVED file, but it failed.\",\"detected_format\":\"" + Parameters.fileType); }
 		}
     	
     }
@@ -377,7 +377,7 @@ public class FileParser
     	{
     		String[] header = tokens;
     		line = br.readLine();
-    		if(line == null) new ErrorJSON("There is no data in your file. Possible reasons: Not a matrix or weird encoding (is it UTF-8?)", "\"detected_format\":\"" + Parameters.fileType + "\"");
+    		if(line == null) new ErrorJSON("There is no data in your file. Possible reasons: Not a matrix or weird encoding (is it UTF-8?)\",\"detected_format\":\"" + Parameters.fileType);
     		tokens = line.split(Parameters.delimiter);
     		g.nbGenes = nRows - 1;
     		switch(Parameters.name_column)
@@ -386,14 +386,14 @@ public class FileParser
     				int startI = 1;
     				if(header.length == tokens.length) g.nbCells = header.length - 1;
     				else if(header.length == tokens.length - 1) { g.nbCells = header.length; startI = 0;}
-    				else new ErrorJSON("Header has " + header.length + " elements, while l.2 has " + tokens.length + " elements. Please correct file or parsing parameters.", "\"detected_format\":\"" + Parameters.fileType + "\"");
+    				else new ErrorJSON("Header has " + header.length + " elements, while l.2 has " + tokens.length + " elements. Please correct file or parsing parameters.\",\"detected_format\":\"" + Parameters.fileType);
     				g.cellNames = new String[(int)Math.min(10, g.nbCells)]; // TODO if too many cells (more than 2,147,483,647), it will not work. Use the String64 array instead
     				for(int i = startI;i < g.cellNames.length + startI; i++) g.cellNames[i-startI] = header[i];
     				g.geneNames = new String[(int)Math.min(10, g.nbGenes)]; // Should not be > 2billions
     				g.matrix = new float[g.geneNames.length][g.cellNames.length];
     				for(int i=0; i < g.matrix.length; i++)
     				{
-    					if(tokens.length != g.nbCells + 1) new ErrorJSON("There should be " + g.nbCells + " cells, but l."+ (i+2) + " has " + tokens.length + " elements. Please correct file or parsing parameters.", "\"detected_format\":\"" + Parameters.fileType + "\"");
+    					if(tokens.length != g.nbCells + 1) new ErrorJSON("There should be " + g.nbCells + " cells, but l."+ (i+2) + " has " + tokens.length + " elements. Please correct file or parsing parameters.\",\"detected_format\":\"" + Parameters.fileType);
         				g.geneNames[i] = tokens[0];
         				for(int j = 1; j < g.matrix[i].length + 1; j++)
         				{
@@ -406,14 +406,14 @@ public class FileParser
     			case LAST:
     				if(header.length == tokens.length) g.nbCells = header.length - 1;
     				else if(header.length == tokens.length - 1) g.nbCells = header.length;
-    				else new ErrorJSON("Header has " + header.length + " elements, while l.2 has " + tokens.length + " elements. Please correct file or parsing parameters.", "\"detected_format\":\"" + Parameters.fileType + "\"");
+    				else new ErrorJSON("Header has " + header.length + " elements, while l.2 has " + tokens.length + " elements. Please correct file or parsing parameters.\",\"detected_format\":\"" + Parameters.fileType);
     				g.cellNames = new String[(int)Math.min(10, g.nbCells)]; // TODO if too many cells (more than 2,147,483,647), it will not work. Use the String64 array instead
     				for(int i = 0;i < g.cellNames.length; i++) g.cellNames[i] = header[i];
     				g.geneNames = new String[(int)Math.min(10, g.nbGenes)]; // Should not be > 2billions
     				g.matrix = new float[g.geneNames.length][g.cellNames.length];
     				for(int i=0; i < g.matrix.length; i++)
     				{
-    					if(tokens.length != g.nbCells + 1) new ErrorJSON("There should be " + g.nbCells + " cells, but l."+ (i+2) + " has " + tokens.length + " elements. Please correct file or parsing parameters.", "\"detected_format\":\"" + Parameters.fileType + "\"");
+    					if(tokens.length != g.nbCells + 1) new ErrorJSON("There should be " + g.nbCells + " cells, but l."+ (i+2) + " has " + tokens.length + " elements. Please correct file or parsing parameters.\",\"detected_format\":\"" + Parameters.fileType);
         				g.geneNames[i] = tokens[(int)g.nbCells];  // TODO if too many cells (more than 2,147,483,647), it will not work. Use the String64 array instead
         				for(int j = 0; j < g.matrix[i].length; j++)
         				{
@@ -425,13 +425,13 @@ public class FileParser
     				break;
     			case NONE:
     				if(header.length == tokens.length) g.nbCells = header.length;
-    				else new ErrorJSON("Header has " + header.length + " elements, while l.2 has " + tokens.length + " elements. Please correct file or parsing parameters.", "\"detected_format\":\"" + Parameters.fileType + "\"");
+    				else new ErrorJSON("Header has " + header.length + " elements, while l.2 has " + tokens.length + " elements. Please correct file or parsing parameters.\",\"detected_format\":\"" + Parameters.fileType);
     				g.cellNames = new String[(int)Math.min(10, g.nbCells)]; // TODO if too many cells (more than 2,147,483,647), it will not work. Use the String64 array instead
     				for(int i = 0;i < g.cellNames.length; i++) g.cellNames[i] = header[i];
     				g.matrix = new float[(int)Math.min(10, g.nbGenes)][g.cellNames.length];
     				for(int i = 0; i < g.matrix.length; i++)
     				{
-    					if(tokens.length != g.nbCells) new ErrorJSON("There should be " + g.nbCells + " cells, but l."+ (i+2) + " has " + tokens.length + " elements. Please correct file or parsing parameters.", "\"detected_format\":\"" + Parameters.fileType + "\"");
+    					if(tokens.length != g.nbCells) new ErrorJSON("There should be " + g.nbCells + " cells, but l."+ (i+2) + " has " + tokens.length + " elements. Please correct file or parsing parameters.\",\"detected_format\":\"" + Parameters.fileType);
         				for(int j = 0; j < g.matrix[i].length; j++)
         				{
         					g.matrix[i][j] = Float.parseFloat(tokens[j]);
@@ -452,7 +452,7 @@ public class FileParser
     				g.matrix = new float[g.geneNames.length][(int)Math.min(10, g.nbCells)];
     				for(int i=0; i < g.matrix.length; i++)
     				{
-    					if(tokens.length != g.nbCells + 1) new ErrorJSON("There should be " + g.nbCells + " cells, but l."+ (i+1) + " has " + tokens.length + " elements. Please correct file or parsing parameters.", "\"detected_format\":\"" + Parameters.fileType + "\"");
+    					if(tokens.length != g.nbCells + 1) new ErrorJSON("There should be " + g.nbCells + " cells, but l."+ (i+1) + " has " + tokens.length + " elements. Please correct file or parsing parameters.\",\"detected_format\":\"" + Parameters.fileType);
         				g.geneNames[i] = tokens[0];
         				for(int j = 1; j < g.matrix[i].length + 1; j++)
         				{
@@ -468,7 +468,7 @@ public class FileParser
     				g.matrix = new float[g.geneNames.length][(int)Math.min(10, g.nbCells)];
     				for(int i=0; i < g.matrix.length; i++)
     				{
-    					if(tokens.length != g.nbCells + 1) new ErrorJSON("There should be " + g.nbCells + " cells, but l."+ (i+1) + " has " + tokens.length + " elements. Please correct file or parsing parameters.", "\"detected_format\":\"" + Parameters.fileType + "\"");
+    					if(tokens.length != g.nbCells + 1) new ErrorJSON("There should be " + g.nbCells + " cells, but l."+ (i+1) + " has " + tokens.length + " elements. Please correct file or parsing parameters.\",\"detected_format\":\"" + Parameters.fileType);
         				g.geneNames[i] = tokens[(int)g.nbCells];  // TODO if too many cells (more than 2,147,483,647), it will not work. Use the String64 array instead
         				for(int j = 0; j < g.matrix[i].length; j++)
         				{
@@ -483,7 +483,7 @@ public class FileParser
     				g.matrix = new float[(int)Math.min(10, g.nbGenes)][(int)Math.min(10, g.nbCells)];
     				for(int i = 0; i < g.matrix.length; i++)
     				{
-    					if(tokens.length != g.nbCells) new ErrorJSON("There should be " + g.nbCells + " cells, but l."+ (i+1) + " has " + tokens.length + " elements. Please correct file or parsing parameters.", "\"detected_format\":\"" + Parameters.fileType + "\"");
+    					if(tokens.length != g.nbCells) new ErrorJSON("There should be " + g.nbCells + " cells, but l."+ (i+1) + " has " + tokens.length + " elements. Please correct file or parsing parameters.\",\"detected_format\":\"" + Parameters.fileType);
         				for(int j = 0; j < g.matrix[i].length; j++)
         				{
         					g.matrix[i][j] = Float.parseFloat(tokens[j]);
@@ -504,7 +504,7 @@ public class FileParser
     	String line = br.readLine();
     	
 	    // Prepare the writing in the file
-    	json.loom.createEmptyMatrix(Parameters.nGenes, Parameters.nCells);
+    	json.loom.createEmptyFloat32MatrixDataset("/matrix", Parameters.nGenes, Parameters.nCells, Parameters.defaultChunkX, Parameters.defaultChunkY); // "/matrix", 
     	json.data.ens_names = new StringArray64(json.data.nber_genes); // After checking the database, this is filled appropriately
     	json.data.gene_names = new StringArray64(json.data.nber_genes); // After checking the database, this is filled appropriately
     	
@@ -540,8 +540,10 @@ public class FileParser
 			case NONE: end--; ncols--; break;
 		}
 
-    	// Read the rest of the file
-		long indexRowToWrite = 0;
+		// Prepare the blocks that will contain all columns (because we write nbChunk Genes x All Cells)
+		int nbBlocks = 0;
+		int indexRow = 0;
+		float[][] subMatrix = new float[Parameters.defaultChunkY][(int)Parameters.nCells];
         while(line != null)
         {
         	current_line++; // To shift the count from [0, n-1] TO [1, n]
@@ -560,185 +562,71 @@ public class FileParser
         			
 			// Reading the gene name, and checking in DB
 			MapGene.addGene(gene, json.data, current_line - 1);
-			if(MapGene.parseGene(json.data, current_line - 1)) // return false if HTSeq annotation
+			MapGene.parseGene(json.data, current_line - 1);
+	
+			// Handle biotypes/Mito
+			boolean isProteinCoding = false;
+			boolean isMito = false;
+			boolean isRibo = false;
+			String biotype = json.data.biotypes.get(current_line - 1);
+			String chr = json.data.chromosomes.get(current_line - 1);
+			if(biotype.equals("protein_coding")) isProteinCoding = true;
+			else if(biotype.equals("rRNA")) isRibo = true;
+			if(chr.equals("MT")) isMito = true;
+			
+			// Reading the rest of the values
+			for(long j = start; j < end; j++)
 			{
-				float[] values = new float[(int)Parameters.nCells]; //TODO if too many cells, it fails
+				// Get the next value
+				String stringValue = tokens[(int)j].trim().replaceAll(",", ".").replaceAll("'|\"", ""); // If French representation of float numbers // TODO fails if too big array
 				
-				// Handle biotypes/Mito
-				boolean isProteinCoding = false;
-				boolean isMito = false;
-				boolean isRibo = false;
-				String biotype = json.data.biotypes.get(current_line - 1);
-				String chr = json.data.chromosomes.get(current_line - 1);
-				if(biotype.equals("protein_coding")) isProteinCoding = true;
-				else if(biotype.equals("rRNA")) isRibo = true;
-				if(chr.equals("MT")) isMito = true;
-				
-				// Reading the rest of the values
-    			for(long j = start; j < end; j++)
-    			{
-    				// Get the next value
-    				String stringValue = tokens[(int)j].trim().replaceAll(",", ".").replaceAll("'|\"", ""); // If French representation of float numbers // TODO fails if too big array
-    				
-    				// Check it is not NA or empty
-        			if(stringValue.equals("")) new ErrorJSON("A value at line " + current_line+ " is empty, but this is not allowed in the current version of ASAP.");
-        			if(stringValue.equals("NA")) new ErrorJSON("A value at line " + current_line + " is NA, but this is not allowed in the current version of ASAP.");
-        			
-        			// Parse to a float and fill the appropriate arrays
-    				try
-    				{
-        				float v = Float.parseFloat(stringValue);
-        				int rv = Math.round(v);
-        				if(Math.abs(rv - v) < 1E-5) v = rv;// if the diff between the value and the rounded is lower than 1E-5 I round it (to avoid Java bugs with float representation)
-        				else json.data.is_count_table = false;
-
-        				values[(int)j - (int)start] = v;
-        				
-        				// Handle biotype/chromosome count per cell
-        				if(isProteinCoding) json.data.proteinCodingContent.set(j - start, json.data.proteinCodingContent.get(j - start) + v); 
-        				if(isRibo) json.data.ribosomalContent.set(j - start, json.data.ribosomalContent.get(j - start) + v); 
-        				if(isMito) json.data.mitochondrialContent.set(j - start, json.data.mitochondrialContent.get(j - start) + v);
-        				
-        				// Generate the sums
-        				json.data.depth.set(j - start, json.data.depth.get(j - start) + v);
-        				json.data.sum.set(current_line - 1, json.data.sum.get(current_line - 1) + v);
-        				
-        				// Number of zeroes / detected genes      				
-        				if(v == 0) json.data.nber_zeros++;
-        				else json.data.detected_genes.set(j - start, json.data.detected_genes.get(j - start) + 1);
-    				}
-    				catch(NumberFormatException nfe) // in case we don't have a number
-    				{
-    					new ErrorJSON("Value '"+stringValue+"' at line " + current_line+ " col " + (j+1) + " is not a number.");
-    				}
-    			}
+				// Check it is not NA or empty
+    			if(stringValue.equals("")) new ErrorJSON("A value at line " + current_line+ " is empty, but this is not allowed in the current version of ASAP.");
+    			if(stringValue.equals("NA")) new ErrorJSON("A value at line " + current_line + " is NA, but this is not allowed in the current version of ASAP.");
     			
-    			// Putting the values in the Loom
-    			json.loom.writeFloatRow("/matrix", values, indexRowToWrite);
-    			indexRowToWrite++;
-			}
-			else // It is an HTSeq annotation or an ERCC, I thus create the appropriate annotation
-			{
-				// HTseq annotation
-		    	if(gene.startsWith("__"))
-		    	{
-		    		switch(gene) // Super ugly, but it should work
-		    		{
-		    			case "__no_feature":
-		    				// Reading the rest of the values
-		        			for(long j = start; j < end; j++)
-		        			{
-		        				String stringValue = tokens[(int)j].trim().replaceAll(",", ".").replaceAll("'|\"", ""); // If French representation of float numbers // TODO fails if too big array
-		    	   				try
-		        				{
-		            				float v = Float.parseFloat(stringValue);
-		            				int rv = Math.round(v);
-		            				if(Math.abs(Math.round(v) - v) >= 1E-5) new ErrorJSON("Value '"+stringValue+"' at line " + current_line+ " col " + (j+1) + " should be an integer, but is not.");
-		            				json.data.__no_feature.set(j - start, rv);
-		        				}
-		        				catch(NumberFormatException nfe) // in case we don't have a number
-		        				{
-		        					new ErrorJSON("Value '"+stringValue+"' at line " + current_line+ " col " + (j+1) + " is not a number.");
-		        				}
-		        			}
-		    				break;
-		    			case "__ambiguous":
-		    				// Reading the rest of the values
-		        			for(long j = start; j < end; j++)
-		        			{
-		        				String stringValue = tokens[(int)j].trim().replaceAll(",", ".").replaceAll("'|\"", ""); // If French representation of float numbers // TODO fails if too big array
-		    	   				try
-		        				{
-		            				float v = Float.parseFloat(stringValue);
-		            				int rv = Math.round(v);
-		            				if(Math.abs(Math.round(v) - v) >= 1E-5) new ErrorJSON("Value '"+stringValue+"' at line " + current_line+ " col " + (j+1) + " should be an integer, but is not.");
-		            				json.data.__ambiguous.set(j - start, rv);
-		        				}
-		        				catch(NumberFormatException nfe) // in case we don't have a number
-		        				{
-		        					new ErrorJSON("Value '"+stringValue+"' at line " + current_line+ " col " + (j+1) + " is not a number.");
-		        				}
-		        			}
-		    				break;
-		    			case "__too_low_aQual":
-		    				// Reading the rest of the values
-		        			for(long j = start; j < end; j++)
-		        			{
-		        				String stringValue = tokens[(int)j].trim().replaceAll(",", ".").replaceAll("'|\"", ""); // If French representation of float numbers // TODO fails if too big array
-		    	   				try
-		        				{
-		            				float v = Float.parseFloat(stringValue);
-		            				int rv = Math.round(v);
-		            				if(Math.abs(Math.round(v) - v) >= 1E-5) new ErrorJSON("Value '"+stringValue+"' at line " + current_line+ " col " + (j+1) + " should be an integer, but is not.");
-		            				json.data.__too_low_aQual.set(j - start, rv);
-		        				}
-		        				catch(NumberFormatException nfe) // in case we don't have a number
-		        				{
-		        					new ErrorJSON("Value '"+stringValue+"' at line " + current_line+ " col " + (j+1) + " is not a number.");
-		        				}
-		        			}
-		    				break;
-		    			case "__not_aligned":
-		    				// Reading the rest of the values
-		        			for(long j = start; j < end; j++)
-		        			{
-		        				String stringValue = tokens[(int)j].trim().replaceAll(",", ".").replaceAll("'|\"", ""); // If French representation of float numbers // TODO fails if too big array
-		    	   				try
-		        				{
-		            				float v = Float.parseFloat(stringValue);
-		            				int rv = Math.round(v);
-		            				if(Math.abs(Math.round(v) - v) >= 1E-5) new ErrorJSON("Value '"+stringValue+"' at line " + current_line+ " col " + (j+1) + " should be an integer, but is not.");
-		            				json.data.__not_aligned.set(j - start, rv);
-		        				}
-		        				catch(NumberFormatException nfe) // in case we don't have a number
-		        				{
-		        					new ErrorJSON("Value '"+stringValue+"' at line " + current_line+ " col " + (j+1) + " is not a number.");
-		        				}
-		        			}
-		    				break;
-		    			case "__alignment_not_unique":
-		    				// Reading the rest of the values
-		        			for(long j = start; j < end; j++)
-		        			{
-		        				String stringValue = tokens[(int)j].trim().replaceAll(",", ".").replaceAll("'|\"", ""); // If French representation of float numbers // TODO fails if too big array
-		    	   				try
-		        				{
-		            				float v = Float.parseFloat(stringValue);
-		            				int rv = Math.round(v);
-		            				if(Math.abs(Math.round(v) - v) >= 1E-5) new ErrorJSON("Value '"+stringValue+"' at line " + current_line+ " col " + (j+1) + " should be an integer, but is not.");
-		            				json.data.__alignment_not_unique.set(j - start, rv);
-		        				}
-		        				catch(NumberFormatException nfe) // in case we don't have a number
-		        				{
-		        					new ErrorJSON("Value '"+stringValue+"' at line " + current_line+ " col " + (j+1) + " is not a number.");
-		        				}
-		        			}
-		    				break;
-		    			default:
-		    				// Should not reach this point
-	    		    }
-		    	}
-		    	else if(gene.startsWith("ERCC-")) // ERCCs
+    			// Parse to a float and fill the appropriate arrays
+				try
 				{
-    				// Reading the rest of the values
-        			for(long j = start; j < end; j++)
-        			{
-        				String stringValue = tokens[(int)j].trim().replaceAll(",", ".").replaceAll("'|\"", ""); // If French representation of float numbers // TODO fails if too big array
-    	   				try
-        				{
-            				float v = Float.parseFloat(stringValue);
-            				json.data.erccs.set((int)json.data.nber_ercc - 1, (int)j - (int)start, v, gene); // TODO fails if too big array
-        				}
-        				catch(NumberFormatException nfe) // in case we don't have a number
-        				{
-        					new ErrorJSON("Value '"+stringValue+"' at line " + current_line+ " col " + (j+1) + " is not a number.");
-        				}
-        			}
+    				float v = Float.parseFloat(stringValue);
+    				int rv = Math.round(v);
+    				if(Math.abs(rv - v) < 1E-5) v = rv;// if the diff between the value and the rounded is lower than 1E-5 I round it (to avoid Java bugs with float representation)
+    				else json.data.is_count_table = false;
+
+    				subMatrix[indexRow][(int)j - (int)start] = v;
+    				
+    				// Handle biotype/chromosome count per cell
+    				if(isProteinCoding) json.data.proteinCodingContent.set(j - start, json.data.proteinCodingContent.get(j - start) + v); 
+    				if(isRibo) json.data.ribosomalContent.set(j - start, json.data.ribosomalContent.get(j - start) + v); 
+    				if(isMito) json.data.mitochondrialContent.set(j - start, json.data.mitochondrialContent.get(j - start) + v);
+    				
+    				// Generate the sums
+    				json.data.depth.set(j - start, json.data.depth.get(j - start) + v);
+    				json.data.sum.set(current_line - 1, json.data.sum.get(current_line - 1) + v);
+    				
+    				// Number of zeroes / detected genes      				
+    				if(v == 0) json.data.nber_zeros++;
+    				else json.data.detected_genes.set(j - start, json.data.detected_genes.get(j - start) + 1);
+				}
+				catch(NumberFormatException nfe) // in case we don't have a number
+				{
+					new ErrorJSON("Value '"+stringValue+"' at line " + current_line+ " col " + (j+1) + " is not a number.");
 				}
 			}
-            line = br.readLine();
+			
+			// One gene is finished
+			indexRow++;
+			line = br.readLine();
+			
+			// Write content of buffer if full
+			if(indexRow >= subMatrix.length || line == null) // If buffer is full or if no more line to read
+			{
+				json.loom.writeFloatBlockDataset("/matrix", subMatrix, nbBlocks, 0);
+				subMatrix = new float[Parameters.defaultChunkY][(int)Parameters.nCells];
+				indexRow = 0;
+				nbBlocks++;
+			}
         }
-        json.loom.resizeDataset("/matrix", Parameters.nGenes - json.data.removed.size(), Parameters.nCells); // Remove extra annotations/ERCCs that were deleted from main matrix
+        json.loom.resizeDataset("/matrix", Parameters.nGenes, Parameters.nCells); // Cause writing fixed-size blocks can extend the matrix size with 0
         LoomFile.fillLoomFile(json.loom, json.data);
         json.writeOutputJSON();
         json.loom.close();

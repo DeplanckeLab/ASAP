@@ -6,62 +6,94 @@ import java.io.IOException;
 import java.util.ArrayList;
 
 import model.Parameters;
+import parsing.model.FileType;
 import parsing.model.GroupPreparse;
 import parsing.model.MetaPreparse;
 
 public class PreparsingJSON
 {
-    public static void writeOutputJSON(MetaPreparse meta)
-    {
-    	try
-    	{
-    		BufferedWriter bw = new BufferedWriter(new FileWriter(Parameters.outputFolder + "output.json"));
-        	bw.write("{\"detected_format\":\"" + Parameters.fileType + "\"," + meta + "}");   	
-        	bw.close();
-    	}
-    	catch(IOException ioe)
-    	{
-    		System.err.println(ioe.getMessage());
-    		System.exit(-1);
-    	}
-    }
-    
-	
+    /** 
+     * Main function creating the JSON of the Preparse steps
+     * @param groups
+     */
     public static void writeOutputJSON(ArrayList<GroupPreparse> groups)
     {
-    	try
-    	{
+    	// Prepare String
+    	StringBuilder sb = new StringBuilder();
+	    sb.append("{\"detected_format\":\"").append(Parameters.fileType).append("\",");
+	    if(Parameters.fileType == FileType.LOOM) sb.append("\"loom_version\":\"").append(Parameters.loomVersion).append("\",");
+    	sb.append("\"list_groups\":").append(toString(groups)).append("}");
+	    
+        // Write output JSON
+        try
+        {      	
     		BufferedWriter bw = new BufferedWriter(new FileWriter(Parameters.outputFolder + "output.json"));
-        	bw.write("{\"detected_format\":\"" + Parameters.fileType + "\",\"list_groups\":" + toString(groups) + "}");
+        	bw.write(sb.toString());
         	bw.close();
     	}
     	catch(IOException ioe)
     	{
-    		System.err.println(ioe.getMessage());
-    		System.exit(-1);
+    		new ErrorJSON(ioe.getMessage());
     	}
     }
-    
-    public static void writeListingJSON(ArrayList<String> files)
+	
+    /**
+     * Only when preparsing Metadata
+     * 
+     * @param files
+     */
+    public static void writeOutputJSON(MetaPreparse meta)
     {
-    	try
-    	{
+    	// Prepare String
+    	StringBuilder sb = new StringBuilder();
+	    sb.append("{\"detected_format\":\"").append(Parameters.fileType).append("\",");
+	    if(Parameters.fileType == FileType.LOOM) sb.append("\"loom_version\":\"").append(Parameters.loomVersion).append("\",");
+    	sb.append(meta).append("}");
+	    
+        // Write output JSON
+        try
+        {      	
     		BufferedWriter bw = new BufferedWriter(new FileWriter(Parameters.outputFolder + "output.json"));
-        	bw.write("{\"detected_format\":\"" + Parameters.fileType + "\",\"list_files\":[");
-        	boolean putComma = false;
-       		for(String f:files)
-        	{
-       			if(putComma) bw.write(",");
-       			bw.write("{\"filename\":\"" + f + "\"}");
-       			putComma = true;
-        	}
-       		bw.write("]}");
+        	bw.write(sb.toString());
         	bw.close();
     	}
     	catch(IOException ioe)
     	{
-    		System.err.println(ioe.getMessage());
-    		System.exit(-1);
+    		new ErrorJSON(ioe.getMessage());
+    	}
+    }
+        
+    /**
+     * If archive containing multiple files
+     * First: Just list the files
+     * 
+     * @param files
+     */
+    public static void writeListingJSON(ArrayList<String> files)
+    {
+    	// Prepare String
+    	StringBuilder sb = new StringBuilder();
+    	sb.append("{\"detected_format\":\"").append(Parameters.fileType).append("\",");
+	    if(Parameters.fileType == FileType.LOOM) sb.append("\"loom_version\":\"").append(Parameters.loomVersion).append("\",");
+    	sb.append("\"list_files\":[");
+    	String prefix = "";
+   		for(String f:files)
+    	{
+   			sb.append(prefix).append("{\"filename\":\"").append(f).append("\"}");
+   			prefix = ",";
+    	}
+   		sb.append("]}");
+    	
+    	// Write output JSON
+        try
+        {      	
+    		BufferedWriter bw = new BufferedWriter(new FileWriter(Parameters.outputFolder + "output.json"));
+        	bw.write(sb.toString());
+        	bw.close();
+    	}
+    	catch(IOException ioe)
+    	{
+    		new ErrorJSON(ioe.getMessage());
     	}
     }
      	

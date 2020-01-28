@@ -1,10 +1,18 @@
 ### ASAP Filtering script
-options(echo=TRUE)
+options(echo=F)
 args <- commandArgs(trailingOnly = TRUE)
 
 ### Libraries
-require(jsonlite)
-require(loomR) # For handling Loom files
+suppressPackageStartupMessages(require(jsonlite))
+suppressPackageStartupMessages(source("hdf5_lib.R"))
+
+### Default Parameters
+set.seed(42)
+input_matrix_filename <- args[1]
+output_dir <- args[2]
+std_method_name <- args[3]
+toKeep <- NULL
+time_idle <- 0
 
 ### Functions
 serialize <- function(widget) {
@@ -32,6 +40,7 @@ Brennecke <- function (expr_mat, spikes = NA, suppress.plot = FALSE, fdr = 0.1, 
   varsSp <- rowVars(countsSp)
   cv2Sp <- varsSp/meansSp^2
   meansGenes <- rowMeans(countsGenes, na.rm = TRUE)
+  meansGenes[meansGenes <= 0] <- NA
   varsGenes <- rowVars(countsGenes)
   cv2Genes <- varsGenes/meansGenes^2
   minMeanForFit <- unname(quantile(meansSp[which(cv2Sp > 0.3)], 0.8))
@@ -59,8 +68,8 @@ Brennecke <- function (expr_mat, spikes = NA, suppress.plot = FALSE, fdr = 0.1, 
   sig <- padj < fdr
   sig[is.na(sig)] <- FALSE
   if (!suppress.plot) {
-    require(ggplot2)
-    require(plotly)
+    suppressPackageStartupMessages(require(ggplot2))
+    suppressPackageStartupMessages(require(plotly))
     
     if(length(cv2Sp) == length(cv2Genes)) cv2Sp = c()
     if(length(meansSp) == length(meansGenes)) meansSp = c()
@@ -68,14 +77,14 @@ Brennecke <- function (expr_mat, spikes = NA, suppress.plot = FALSE, fdr = 0.1, 
     if(!is.null(data.ens)) data.plot$ens = c(data.ens, rep("ERCC", length(cv2Sp)))
     if(!is.null(data.gene)) data.plot$gene = c(data.gene, rep("ERCC", length(cv2Sp)))
     # Prepare text description for each dot:
-    data.plot$text <- paste("Means: ", round(data.plot$means, 3), "<br>CV\u00B2: ", round(data.plot$cv2, 3), "<br>Ensembl: ", data.plot$ens, "<br>Gene: ", data.plot$gene, sep="")
+    data.plot$text <- paste0("Means: ", round(data.plot$means, 3), "<br>CV\u00B2: ", round(data.plot$cv2, 3), "<br>Ensembl: ", data.plot$ens, "<br>Gene: ", data.plot$gene, "<br>p-value: ", p, "<br>FDR: ", padj)
     data.plot$colPoint <- c(ifelse(padj < fdr, "black", "darkgrey"), rep("blue", length(cv2Sp)))
     data.plot = subset(data.plot, !is.na(cv2))
     
     p <- ggplot(data.plot, aes(x=means, y=cv2, text=text)) + geom_point(shape = 16, aes(col = colPoint)) + labs(title = "Highly variable genes [Brennecke et al, 2013]")
     p <- p + xlab("Average normalized read count") + ylab("Squared coefficient of variation (CV\u00B2)")
     p <- p + scale_x_log10() + scale_y_log10()
-    data.line <- data.frame(xg = 10^seq(log10(min(data.plot$mean)), log10(max(data.plot$mean)), length.out = 1000))
+    data.line <- data.frame(xg = 10^seq(log10(min(data.plot$mean, na.rm = T)), log10(max(data.plot$mean, na.rm = T)), length.out = 1000))
     data.line$yg = ((a1)/data.line$xg + a0)
     data.line$text = ""
     p <- p + geom_line(data = data.line, mapping = aes(x = xg, y = yg), col = "#FF000080", lwd = 1)
@@ -101,7 +110,7 @@ Brennecke <- function (expr_mat, spikes = NA, suppress.plot = FALSE, fdr = 0.1, 
     #lines(xg, (a1)/xg + a0, col = "#FF000080", lwd = 3)
     #lines(xg, psia1theta/xg + a0 + minBiolDisp, lty = "dashed", col = "#C0007090", lwd = 3)
   }
-  return(names(meansGenes)[sig])
+  return(sig)
 }
 
 DropoutDEM3Drop <- function (fit, ntop = NULL, method = "fdr", qval.thresh = 2, suppress.plot = TRUE) {
@@ -140,8 +149,8 @@ DropoutDEM3Drop <- function (fit, ntop = NULL, method = "fdr", qval.thresh = 2, 
   }
   outTABLE <- data.frame(Gene = names(out), effect_size = diff, p.value = out, q.value = qval)
   if (!suppress.plot) {
-    require(ggplot2)
-    require(plotly)
+    suppressPackageStartupMessages(require(ggplot2))
+    suppressPackageStartupMessages(require(plotly))
     data.plot = data.frame(xes = log10(vals$tjs/vals$nc), droprate_obs = droprate_obs)
     data.plot$color = densCols(data.plot$xes, data.plot$droprate_obs, colramp = colorRampPalette(c("grey75", "black")))
     toplot = names(out)
@@ -173,55 +182,14 @@ DropoutDEM3Drop <- function (fit, ntop = NULL, method = "fdr", qval.thresh = 2, 
   return(outTABLE)
 }
 
-error.json <- function(displayed) {
-  stats <- list()
-  stats$displayed_error = displayed
-  write(toJSON(stats, method="C", auto_unbox=T), file = paste0(output_dir,"/output.json"), append=F)
-  stop(displayed)
-}
-
-# Open the Loom file while handling potential locking
-open_with_lock <- function(loom_filename, mode) {
-  repeat{ # Handle the lock of the file
-    isLocked <- F
-    tryCatch({
-      data.loom <- connect(filename = loom_filename, mode = mode)
-    }, error = function(err) {
-      if(grepl("unable to lock file", err$message)) isLocked <<- T
-      else error.json(err$message)
-    })
-    if(!isLocked) return(data.loom)
-    else {
-      message("Sleeping 1sec for file lock....")
-      time_idle <<- time_idle + 1
-      Sys.sleep(1)
-    }
-  }
-}
-
-### Default Parameters
-set.seed(42)
-input_matrix_filename <- args[1]
-output_dir <- args[2]
-std_method_name <- args[3]
-time_idle <- 0
-data.parsed <- NULL
-data.ercc <- NULL
-data.ens <- NULL
-data.gene <- NULL
-data.warnings <- NULL
-
 ### Load data
 # Connect to the loom file in read mode and recuperate the infos (not optimized for OUT-OF-RAM computation)
 data.loom <- open_with_lock(input_matrix_filename, "r")
-if(data.loom$exists("/matrix")) data.parsed <- as.data.frame(t(data.loom$matrix[, ])) # t() because loomR returns the t() of the correct matrix we want
-if(data.loom$exists("/col_attrs/_ERCCs")) data.ercc <- as.data.frame(data.loom[["/col_attrs/_ERCCs"]][, ])
-if(data.loom$exists("/row_attrs/Accession")) data.ens <- data.loom[["/row_attrs/Accession"]][]
-if(data.loom$exists("/row_attrs/Gene")) data.gene <- data.loom[["/row_attrs/Gene"]][]
-data.loom$close_all()
-
-# Add Gene Ids
-rownames(data.parsed) <- 1:nrow(data.parsed) 
+data.parsed <- fetch_dataset(data.loom, "/matrix", transpose = T) # t() because rhdf5 returns the t() of the correct matrix we want
+data.ercc <- fetch_dataset(data.loom, "/col_attrs/_ERCCs")
+data.ens <- fetch_dataset(data.loom, "/row_attrs/Accession")
+data.gene <- fetch_dataset(data.loom, "/row_attrs/Gene")
+close_all()
 
 ### Run Filtering algorithms
 if (std_method_name == "hvg"){
@@ -232,7 +200,6 @@ if (std_method_name == "hvg"){
     data.parsed <- rbind(data.parsed, data.ercc) # data.ercc should exist
     data.ercc <- (nrow(data.parsed) - nrow(data.ercc) + 1):nrow(data.parsed)
   }
-  
   # Parameters
   fdr_param = args[5]
   if(!is.null(fdr_param) & !is.na(fdr_param)) fdr_param = as.numeric(fdr_param)
@@ -240,21 +207,21 @@ if (std_method_name == "hvg"){
   if(!is.null(minBiolDisp_param) & !is.na(minBiolDisp_param)) minBiolDisp_param = as.numeric(minBiolDisp_param)
   
   # Run HVG
-  data.hvg <- Brennecke(expr_mat = data.parsed, spikes = data.ercc, fdr = fdr_param, minBiolDisp=minBiolDisp_param)
+  data.hvg <- Brennecke(expr_mat = data.parsed, spikes = data.ercc, fdr = fdr_param, minBiolDisp=minBiolDisp_param) # spikes = if ERCCs
   
   # If not genes, output error JSON
-  if(is.null(data.hvg) || length(data.hvg) == 0) error.json("The output matrix has no more genes. You should put less stringent thresholds.")
+  if(is.null(data.hvg) || sum(data.hvg) == 0) error.json("The output matrix has no more genes. You should put less stringent thresholds.")
   
   # Preparing JSON for filtering using the Java software
   stats = list() 
-  stats$kept_genes = as.numeric(data.hvg) - 1
+  stats$kept_genes = as.numeric(which(data.hvg)) - 1 # These are the indexes to filter
   write(jsonlite::toJSON(stats, method="C", auto_unbox=T, digits = NA), file = paste0(output_dir,"/to_keep.json"), append=F)
   
   # Run Java for filtering the rows in the main matrix and all metadata
   system(paste0("java -jar ASAP.jar -T FilterRows -loom ", input_matrix_filename, " -o ", output_dir, " -m keep -row_names_file ", paste0(output_dir,"/to_keep.json")))
 } else if (std_method_name == "m3drop"){
   
-  require(M3Drop)
+  suppressPackageStartupMessages(require(M3Drop))
   
   # Parameters
   fdr_param = args[4]
