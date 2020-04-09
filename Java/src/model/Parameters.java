@@ -32,6 +32,7 @@ public class Parameters
 	public static long nCells = -1;
 	public static long nGenes = -1;
 	public static long[] indexes = null;
+	public static long[] stable_ids = null;
 	public static String[] names = null;
 	public static String metaName = null;
 	public static MetaOn which = null;
@@ -419,6 +420,24 @@ public class Parameters
 							new ErrorJSON("The '-indexes' option should be followed by positive Long value(s). You entered " + args[i]);
 						}
 						break;
+					case "-stable_ids":
+						i++;
+						if(args[i].equals("")) new ErrorJSON("The -stable_ids option should be followed by String(s).");
+						try
+						{
+							String[] tokens = args[i].split(",");
+							stable_ids = new long[tokens.length];
+							for(int k = 0; k < tokens.length; k++) 
+							{
+								stable_ids[k] = Long.parseLong(tokens[k]);
+								if(stable_ids[k] < 0) new ErrorJSON("The '-stable_ids' option should be followed by positive Long value(s). You entered " + stable_ids[k]);
+							}
+						}
+						catch(NumberFormatException nfe)
+						{
+							new ErrorJSON("The '-stable_ids' option should be followed by positive Long value(s). You entered " + args[i]);
+						}
+						break;
 					case "-names":
 						i++;
 						if(args[i].equals("")) new ErrorJSON("The '-names' option should be followed by String(s).");
@@ -439,8 +458,10 @@ public class Parameters
 			System.exit(-1);
 		}
 		if(iAnnot == null) iAnnot = "/matrix";
-		if(indexes == null && names == null) new ErrorJSON("You need to use at least one of the two options -names or -indexes");
-		if(indexes != null && names != null) new ErrorJSON("You need to use only one of the two options -names or -indexes, not both");
+		if(indexes == null && names == null && stable_ids == null) new ErrorJSON("You need to use at least one of the following options -names, -indexes or -stable_ids");
+		if(indexes != null && names != null) new ErrorJSON("Please select whether -indexes or -names options. Not both.");
+		if(indexes != null && stable_ids != null) new ErrorJSON("Please select whether indexes or -stable_ids options. Not both.");
+		if(names != null && stable_ids != null) new ErrorJSON("Please select whether -stable_ids or -names options. Not both.");
 	}
 	
 	public static void loadExtractCol(String[] args)
@@ -1678,7 +1699,7 @@ public class Parameters
 						i++;
 						switch(args[i])
 						{
-						case "wilcox-asap":
+						case "wilcox_asap":
 							deModel = differential_expression.Model.Wilcoxon;
 							break;
 						default:
@@ -1897,6 +1918,7 @@ public class Parameters
 				System.out.println("-o %s \t[Optional] Output JSON file.");
 				System.out.println("-loom %s \t[Required] Loom file to read.");
 				System.out.println("-iAnnot %s \t\tInput dataset e.g. '/matrix' (default)");
+				System.out.println("-stable_ids %s \t[One is required] Stable_id(s) of the row to read (separated by comma if multiple)");
 				System.out.println("-indexes %s \t[One is required] Index(es) of the row to read (separated by comma if multiple)");
 				System.out.println("-names %s \t[One is required] Name(s) of the gene to extract (separated by comma if multiple)");
 				System.out.println("-display-names %s \t[Optional] For adding the name(s) of the cell/genes extracted in the output JSON");

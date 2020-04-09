@@ -51,54 +51,34 @@ public class ASAP
 				GODatabase.generateGODB();
 				break;
 			case Enrichment:
-				long t = System.currentTimeMillis();
 				Enrichment.runEnrichment();
-				//System.out.println("Enrichment time: " + Utils.toReadableTime(System.currentTimeMillis() - t));
 				break;
 			case DimensionReduction: 
-				t = System.currentTimeMillis();
 				FileDimReduc.reduceDimension();
-				System.out.println("Dimension reduction time: " + Utils.toReadableTime(System.currentTimeMillis() - t));
 				break;
 			case DifferentialExpression: 
-				t = System.currentTimeMillis();
 				DE.performDE();
-				System.out.println("Differential expression time: " + Utils.toReadableTime(System.currentTimeMillis() - t));
 				break;
 			case Normalization: 
-				//t = System.currentTimeMillis();
 				Normalization.runNormalization();
-				//System.out.println("Normalization time: " + Utils.toReadableTime(System.currentTimeMillis() - t));
 				break;
 			case Scaling: 
-				//t = System.currentTimeMillis();
 				Scaling.runScaling();
-				//System.out.println("Normalization time: " + Utils.toReadableTime(System.currentTimeMillis() - t));
 				break;
 			case Preparsing: 
-				t = System.currentTimeMillis();
 				FileParser.preparse();
-				System.out.println("Preparsing time: " + Utils.toReadableTime(System.currentTimeMillis() - t));
 				break;
 			case Parsing: 
-				t = System.currentTimeMillis();
 				DBManager.connect();
 				DBManager.getGenesInDB(Parameters.organism);
 				DBManager.disconnect();
-				System.out.println("Accessing DB time: " + Utils.toReadableTime(System.currentTimeMillis() - t));
-				t = System.currentTimeMillis();
 				FileParser.parse();
-				System.out.println("Parsing time: " + Utils.toReadableTime(System.currentTimeMillis() - t));
 				break;
 			case PreparseMetadata: 
-				t = System.currentTimeMillis();
 				FileParser.preparseMetadata();
-				System.out.println("PreparseMetadata time: " + Utils.toReadableTime(System.currentTimeMillis() - t));
 				break;
 			case ParseMetadata: 
-				t = System.currentTimeMillis();
 				FileParser.parseMetadata();
-				System.out.println("ParsMetadata time: " + Utils.toReadableTime(System.currentTimeMillis() - t));
 				break;
 			case ExtractRow: 
 				LoomFile loom = new LoomFile("r", Parameters.loomFile);
@@ -122,9 +102,18 @@ public class ASAP
 				// Retrieve indexes if exist
 				if(Parameters.indexes == null) 
 				{
-					if(dim[0] == nbCells) Parameters.indexes = loom.getCellIndexes(Parameters.names); // depends of the metadata/dataset to extract
-					else if(dim[0] == nbGenes) Parameters.indexes = loom.getGeneIndexes(Parameters.names);
-					else new ErrorJSON("Not sure what to do here...");
+					if(Parameters.names != null)
+					{
+						if(dim[0] == nbCells) Parameters.indexes = loom.getCellIndexes(Parameters.names); // depends of the metadata/dataset to extract
+						else if(dim[0] == nbGenes) Parameters.indexes = loom.getGeneIndexes(Parameters.names);
+						else new ErrorJSON("Not sure what to do here...");
+					}
+					else if(Parameters.stable_ids != null)
+					{
+						if(dim[0] == nbCells) Parameters.indexes = loom.getCellIndexesByStableIds(Parameters.stable_ids); // depends of the metadata/dataset to extract
+						else if(dim[0] == nbGenes) Parameters.indexes = loom.getGeneIndexesByStableIds(Parameters.stable_ids);
+						else new ErrorJSON("Not sure what to do here...");
+					} // the other case should be handled in Parameters
 				}
 				
 				// Creating output string
@@ -321,8 +310,7 @@ public class ASAP
 				for(String metaToExtract:metapath)
 				{
 					// Extract metadata from Loom
-					Metadata metadata;
-					metadata = loom.readMetadata(metaToExtract); // We could in principle simplify this part if we know already the data type / if we want to output the values / etc...
+					Metadata metadata = loom.fillInfoMetadata(metaToExtract, true); // We could in principle simplify this part if we know already the data type / if we want to output the values / etc...
 					if(Parameters.metaName == null && Parameters.metatype != null) metadata.type = Parameters.metatype;
 					
 					sb.append(prefix);
@@ -470,9 +458,7 @@ public class ASAP
 				FileFilter.filterGenes();
 				break;
 			case FilterDEMetadata:
-				t = System.currentTimeMillis();
 				FileFilter.filterDEMetadata();
-				//System.out.println("FilterDE metadata time: " + Utils.toReadableTime(System.currentTimeMillis() - t));
 				break;
 		}
 	}

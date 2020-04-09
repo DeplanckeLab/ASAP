@@ -41,7 +41,7 @@ public class DE
 		// Write output.json
 		StringBuilder sb = new StringBuilder();
     	sb.append("{").append("\"time_idle\":").append(Parameters.idleTime).append(",\"metadata\":[{\"name\":\"").append(Parameters.oAnnot).append("\",\"on\":\"row\",\"type\":\"NUMERIC\",\"nber_cols\":5,\"nber_rows\":");
-		sb.append(nber_genes).append("}]}");
+		sb.append(nber_genes).append(",\"headers\":[\"log Fold-Change\",\"p-value\",\"FDR\",\"Avg. Exp. Group 1\",\"Avg. Exp. Group 2\"]").append("}]}");
 		try
 		{
     		BufferedWriter bw = new BufferedWriter(new FileWriter(Parameters.outputFolder + "output.json"));
@@ -59,7 +59,7 @@ public class DE
     	
     	// Get the groups
     	System.out.print("Parsing Group metadata... ");
-    	Metadata groups = loom.readMetadata(Parameters.gAnnot);
+    	Metadata groups = loom.fillInfoMetadata(Parameters.gAnnot, true);
     	System.out.println("Group metadata (" + Parameters.gAnnot + ") contains " + groups.categories.size() + " groups");
     	
     	// Handle the case where g2 is complementary group

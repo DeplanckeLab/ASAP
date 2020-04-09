@@ -16,6 +16,7 @@ public class Metadata
 	public HashMap<String, Long> categoriesMap;
 	public StringArray64 values = null;
 	public String[][] matrixValues = null; // TODO handle this if big?
+	public String value = null; // in case of single value
 	public long nbcol = -1;
 	public long nbrow = -1;
 	public long size = -1;
@@ -198,10 +199,18 @@ public class Metadata
 			}
 		}
 		
-		if((this.values != null || this.matrixValues != null) && writeValues)
+		if((this.values != null || this.matrixValues != null || this.value != null) && writeValues)
 		{
 			sb.append(",\"values\":[");
-			if(this.values != null) // If vector
+			if(this.value != null) // Single value
+			{
+				if(this.type == Metatype.STRING) sb.append("\"");
+				String val = this.value;
+				if(this.type == Metatype.NUMERIC) val = Utils.format(val);
+				sb.append(val);
+				if(this.type == Metatype.STRING) sb.append("\"");
+			}
+			else if(this.values != null) // If vector
 			{
 				String prefix = "\"";
 				if(this.type == Metatype.NUMERIC) prefix = "";

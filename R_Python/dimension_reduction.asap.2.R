@@ -97,7 +97,7 @@ if (std_method_name == "pca"){ # default []
   # Parameters
   min_dist <- args[7]
   if(!is.null(min_dist) & !is.na(min_dist)) min_dist <- as.numeric(min_dist)
-  else min_dist <- 0.2
+  else min_dist <- 0.1
 
   n_neighbors <- args[8]
   if(!is.null(n_neighbors) & !is.na(n_neighbors)) n_neighbors <- as.numeric(n_neighbors)

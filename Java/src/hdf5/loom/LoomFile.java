@@ -185,7 +185,12 @@ public class LoomFile
 				meta.on = MetaOn.GENE;
 				meta.size = this.getSizeInBytes("/row_attrs/" + mem);
 				long[] dims = this.getDimensions("/row_attrs/" + mem); // TODO HANDLE THE 1D AND 2D ARRAYS
-				if(dims.length == 1)
+				if(dims.length == 0) // Not an array => single value
+				{
+					meta.nbrow = 1;
+					meta.nbcol = 1;
+				}
+				else if(dims.length == 1)
 				{
 					meta.nbrow = dims[0];
 					meta.nbcol = 1;
@@ -207,8 +212,13 @@ public class LoomFile
 				meta.path = "/col_attrs/" + mem;
 				meta.on = MetaOn.CELL;
 				meta.size = this.getSizeInBytes("/col_attrs/" + mem);
-				long[] dims = this.getDimensions("/col_attrs/" + mem); // TODO HANDLE THE 1D AND 2D ARRAYS
-				if(dims.length == 1)
+				long[] dims = this.getDimensions("/col_attrs/" + mem);
+				if(dims.length == 0) // Not an array => single value
+				{
+					meta.nbrow = 1;
+					meta.nbcol = 1;
+				}
+				else if(dims.length == 1)
 				{
 					meta.nbrow = 1;
 					meta.nbcol = dims[0];
@@ -217,6 +227,57 @@ public class LoomFile
 				{
 					meta.nbrow = dims[1];
 					meta.nbcol = dims[0];
+				}
+				res.add(meta);
+			}
+		}
+		m = this.handle.getGroupMembers("/attrs");
+		for(String mem:m)
+		{
+			if(!this.handle.isGroup("/attrs/" + mem))
+			{
+				Metadata meta = new Metadata();
+				meta.path = "/attrs/" + mem;
+				meta.on = MetaOn.GLOBAL;
+				meta.size = this.getSizeInBytes(meta.path);
+				long[] dims = this.getDimensions(meta.path);
+				
+				if(dims.length == 0) // Not an array => single value
+				{
+					meta.nbrow = 1;
+					meta.nbcol = 1;
+				}
+				else if(dims.length == 1)
+				{
+					meta.nbrow = 1;
+					meta.nbcol = dims[0];
+				}
+				else // matrix
+				{
+					meta.nbrow = dims[1];
+					meta.nbcol = dims[0];
+				}
+				res.add(meta);
+			}
+		}
+		m = this.handle.getGroupMembers("/layers");
+		for(String mem:m)
+		{
+			if(!this.handle.isGroup("/layers/" + mem))
+			{
+				Metadata meta = new Metadata();
+				meta.path = "/layers/" + mem;
+				meta.on = MetaOn.EXPRESSION_MATRIX;
+				meta.size = this.getSizeInBytes(meta.path);
+				long[] dims = this.getDimensions(meta.path);
+				if(dims.length < 2) // Not an array => single value
+				{
+					new ErrorJSON("/layers group should contain only 2D matrices");
+				}
+				else
+				{
+					meta.nbrow = dims[0];
+					meta.nbcol = dims[1];
 				}
 				res.add(meta);
 			}
@@ -292,22 +353,23 @@ public class LoomFile
 		return indexesMatching;
 	}
 	
-	public Metadata readMetadata(String path)
+	public Metadata fillInfoMetadata(String path, boolean checkCategories)
 	{
 		Metadata out = new Metadata();
 		out.path = path;
 		out.size = this.getSizeInBytes(path);
 		
-		// First check if loom file is opened
+		// Check if loom file is opened
 		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
+		// Check if the path exist in the Loom
+		if(!this.handle.exists(path)) new ErrorJSON("Error in the Loom file. Path " + path + " does not exist!");
 		
 		// Then check if the path corresponds to a metadata path
-		if(path.contains("col_attrs/")) out.on = MetaOn.CELL;
-		else if(path.contains("row_attrs/")) out.on = MetaOn.GENE;
-		else new ErrorJSON("Your path is not a proper CELL or GENE metadata");
-		
-		// Finally check if the path exist in the Loom
-		if(!this.handle.exists(path)) new ErrorJSON("Error in the Loom file. Path " + path + " does not exist!");
+		if(path.startsWith("/col_attrs/")) out.on = MetaOn.CELL;
+		else if(path.startsWith("/row_attrs/")) out.on = MetaOn.GENE;
+		else if(path.equals("/matrix") || path.startsWith("/layers")) out.on = MetaOn.EXPRESSION_MATRIX;
+		else if(path.startsWith("/attrs/")) out.on = MetaOn.GLOBAL;
+		else new ErrorJSON("Your path is not a proper CELL, GENE or GLOBAL metadata, nor a EXPRESSION_MATRIX");
 		
 		// For count occurrences of each value
 		out.categories = new HashSet<>();
@@ -315,9 +377,6 @@ public class LoomFile
 		
 		// Prepare reading	
 		long[] dim = this.getDimensions(path);
-		//int[] blockSize = this.getChunkSizes(path);
-		//int nbTotalBlocks = (int)Math.ceil((double)dim[0] / blockSize[0]); // dim[0] === Nb genes ?
-		//System.out.println("Reading " + nbTotalBlocks + " independent blocks...");
 
 		// Check the metadata type
 		HDF5DataClass h5_class = this.getDataClass(path);
@@ -325,103 +384,159 @@ public class LoomFile
 		{
 			case FLOAT:
 				out.type = Metatype.NUMERIC; // a priori
-				if(dim.length > 1 && dim[1] > 0) // Matrix
+				if(dim.length == 0) // Not an array => single value
 				{
-					float[][] values = readFloatMatrix(path);
-					out.matrixValues = new String[values.length][values[0].length];
-					for (int i = 0; i < out.matrixValues.length; i++)
+					out.value = "" + readFloat(path);
+					out.categories = null;
+					out.nbcol = 1;
+					out.nbrow = 1;
+					out.type = Metatype.NUMERIC;
+				}
+				else if(dim.length > 1 && dim[1] > 0) // Matrix
+				{
+					if(out.on != MetaOn.EXPRESSION_MATRIX)
 					{
-						for (int j = 0; j < out.matrixValues[i].length; j++) 
+						if(checkCategories)
 						{
-							float v = values[i][j];
+							float[][] values = readFloatMatrix(path);
+							out.matrixValues = new String[values.length][values[0].length];
+							for (int i = 0; i < out.matrixValues.length; i++)
+							{
+								for (int j = 0; j < out.matrixValues[i].length; j++) 
+								{
+									float v = values[i][j];
+									String vs = "" + v;
+									out.categories.add(vs); // Checking if not discrete
+									Long count = out.categoriesMap.get(vs);
+									if(count == null) count = 0L;
+									out.categoriesMap.put(vs, count + 1);
+									out.matrixValues[i][j] =  vs;
+								}
+							}
+							if(out.isCategorical(values.length * values[0].length)) out.type = Metatype.DISCRETE;
+							else out.categories = null;
+						}
+					}
+					else
+					{
+						out.nbcol = dim[1];
+						out.nbrow = dim[0];
+					}
+				}
+				else // Vector
+				{
+					if(checkCategories)
+					{
+						FloatArray64 values = readFloatArray(path);
+						out.values = new StringArray64(values.size());
+						for (long i = 0; i < out.values.size(); i++)
+						{
+							float v = values.get(i);
 							String vs = "" + v;
 							out.categories.add(vs); // Checking if not discrete
 							Long count = out.categoriesMap.get(vs);
 							if(count == null) count = 0L;
 							out.categoriesMap.put(vs, count + 1);
-							out.matrixValues[i][j] =  vs;
+							out.values.set(i, vs);
 						}
+						if(out.isCategorical()) out.type = Metatype.DISCRETE;
+						else out.categories = null;
 					}
-					if(out.isCategorical(values.length * values[0].length)) out.type = Metatype.DISCRETE;
-					else out.categories = null;
-				}
-				else // Vector
-				{
-					FloatArray64 values = readFloatArray(path);
-					out.values = new StringArray64(values.size());
-					for (long i = 0; i < out.values.size(); i++)
-					{
-						float v = values.get(i);
-						String vs = "" + v;
-						out.categories.add(vs); // Checking if not discrete
-						Long count = out.categoriesMap.get(vs);
-						if(count == null) count = 0L;
-						out.categoriesMap.put(vs, count + 1);
-						out.values.set(i, vs);
-					}
-					if(out.isCategorical()) out.type = Metatype.DISCRETE;
-					else out.categories = null;
 				}
 				break;		
 			case INTEGER:
 				out.type = Metatype.NUMERIC; // a priori
-				if(dim.length > 1 && dim[1] > 0) // Matrix
+				if(dim.length == 0) // Not an array => single value
 				{
-					int[][] values = readIntMatrix(path);
-					out.matrixValues = new String[values.length][values[0].length];
-					for (int i = 0; i < out.matrixValues.length; i++)
+					out.value = "" + readInt(path);
+					out.categories = null;
+					out.nbcol = 1;
+					out.nbrow = 1;
+					out.type = Metatype.NUMERIC;
+				}
+				else if(dim.length > 1 && dim[1] > 0) // Matrix
+				{
+					if(out.on != MetaOn.EXPRESSION_MATRIX)
 					{
-						for (int j = 0; j < out.matrixValues[i].length; j++) 
+						if(checkCategories)
 						{
-							int v = values[i][j];
+							int[][] values = readIntMatrix(path);
+							out.matrixValues = new String[values.length][values[0].length];
+							for (int i = 0; i < out.matrixValues.length; i++)
+							{
+								for (int j = 0; j < out.matrixValues[i].length; j++) 
+								{
+									int v = values[i][j];
+									String vs = "" + v;
+									out.categories.add(vs); // Checking if not discrete
+									Long count = out.categoriesMap.get(vs);
+									if(count == null) count = 0L;
+									out.categoriesMap.put(vs, count + 1);
+									out.matrixValues[i][j] =  vs;
+								}
+							}
+							if(out.isCategorical(values.length * values[0].length)) out.type = Metatype.DISCRETE;
+							else out.categories = null;
+						}
+					}
+					else
+					{
+						out.nbcol = dim[1];
+						out.nbrow = dim[0];
+					}
+				}
+				else // Vector
+				{
+					if(checkCategories)
+					{
+						IntArray64 values = readIntArray(path);
+						out.values = new StringArray64(values.size());
+						for (long i = 0; i < out.values.size(); i++)
+						{
+							int v = values.get(i);
 							String vs = "" + v;
 							out.categories.add(vs); // Checking if not discrete
 							Long count = out.categoriesMap.get(vs);
 							if(count == null) count = 0L;
 							out.categoriesMap.put(vs, count + 1);
-							out.matrixValues[i][j] =  vs;
+							out.values.set(i, vs);
 						}
+						if(out.isCategorical()) out.type = Metatype.DISCRETE;
+						else out.categories = null;
 					}
-					if(out.isCategorical(values.length * values[0].length)) out.type = Metatype.DISCRETE;
-					else out.categories = null;
-				}
-				else // Vector
-				{
-					IntArray64 values = readIntArray(path);
-					out.values = new StringArray64(values.size());
-					for (long i = 0; i < out.values.size(); i++)
-					{
-						int v = values.get(i);
-						String vs = "" + v;
-						out.categories.add(vs); // Checking if not discrete
-						Long count = out.categoriesMap.get(vs);
-						if(count == null) count = 0L;
-						out.categoriesMap.put(vs, count + 1);
-						out.values.set(i, vs);
-					}
-					if(out.isCategorical()) out.type = Metatype.DISCRETE;
-					else out.categories = null;
 				}
 				break;	
 			case STRING:
 				out.type = Metatype.STRING; // a priori
-				if(dim.length > 1 && dim[1] > 0) // Matrix
+				if(dim.length == 0) // Not an array => single value
+				{
+					out.value = readString(path);
+					out.value = out.value.replaceAll("\"", "\\\\\"");
+					out.categories = null;
+					out.nbcol = 1;
+					out.nbrow = 1;
+					out.type = Metatype.STRING;
+				}
+				else if(dim.length > 1 && dim[1] > 0) // Matrix
 				{
 					new ErrorJSON("A 2D array of STRING is not allowed");
 				}
 				else // Vector
 				{
-					out.values = readStringArray(path);
-					for (long i = 0; i < out.values.size(); i++)
+					if(checkCategories)
 					{
-						String v = out.values.get(i);
-						out.categories.add(v); // Still checking if not discrete
-						Long count = out.categoriesMap.get(v);
-						if(count == null) count = 0L;
-						out.categoriesMap.put(v, count + 1);
+						out.values = readStringArray(path);
+						for (long i = 0; i < out.values.size(); i++)
+						{
+							String v = out.values.get(i);
+							out.categories.add(v); // Still checking if not discrete
+							Long count = out.categoriesMap.get(v);
+							if(count == null) count = 0L;
+							out.categoriesMap.put(v, count + 1);
+						}
+						if(out.isCategorical()) out.type = Metatype.DISCRETE;
+						else out.categories = null;
 					}
-					if(out.isCategorical()) out.type = Metatype.DISCRETE;
-					else out.categories = null;
 				}
 				break;
 			default:
@@ -443,13 +558,14 @@ public class LoomFile
 		return this.handle.getDataSetInformation(path).getDimensions();
 	}
 	
-	public long getSizeInBytes(String path)
+	public long getSizeInBytes(String path) // TODO if the dataste is GZIP, I cannot retrieve the true value
 	{
 		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
-		//return this.handle.getDataSetInformation(path).getSize();
+		if(!this.handle.object().exists(path)) { this.close(); new ErrorJSON("This dataset does not exist"); }
 		HDF5DataSetInformation info = this.handle.getDataSetInformation(path);
-		long nb = info.getNumberOfElements();
+		long nb = info.getNumberOfElements();;
 		HDF5DataTypeInformation type = info.getTypeInformation();
+		if(nb == 0) nb = 1;
 		long esize = type.getElementSize();
 		if(type.isVariableLengthString()) esize = type.getElementSizeForPadding() * 2; // 8 * 2 = 16
 		return nb * esize;
@@ -506,6 +622,33 @@ public class LoomFile
 		return res;
 	}
 	
+	public long[] getGeneIndexesByStableIds(long[] stable_ids)
+	{
+		int found = 0;
+		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
+		HashMap<Long, Long> tmp = new HashMap<>();
+		for(long stable_id:stable_ids) tmp.put(stable_id, -1l);
+		if(this.handle.object().isDataSet("/row_attrs/_StableID"))
+		{
+			LongArray64 genes = this.readLongArray("/row_attrs/_StableID");
+			for(long i = 0; i < genes.size(); i++) 
+			{
+				long g = genes.get(i);
+				if(tmp.containsKey(g)) 
+				{
+					tmp.put(g, i);
+					found++;
+					if(found == stable_ids.length) break;
+				}
+			}
+		}
+		// Prepare output res
+		long[] res = new long[stable_ids.length];
+		for (int i = 0; i < stable_ids.length; i++) res[i] = tmp.get(stable_ids[i]);
+		
+		return res;
+	}
+	
 	public long[] getCellIndexes(String[] names)
 	{
 		int found = 0;
@@ -529,6 +672,33 @@ public class LoomFile
 		// Prepare output res
 		long[] res = new long[names.length];
 		for (int i = 0; i < names.length; i++) res[i] = tmp.get(names[i].toUpperCase());
+		
+		return res;
+	}
+	
+	public long[] getCellIndexesByStableIds(long[] stable_ids)
+	{
+		int found = 0;
+		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
+		HashMap<Long, Long> tmp = new HashMap<>();
+		for(long stable_id:stable_ids) tmp.put(stable_id, -1l);
+		if(this.handle.object().isDataSet("/col_attrs/_StableID"))
+		{
+			LongArray64 cells = this.readLongArray("/col_attrs/_StableID");
+			for(long i = 0; i < cells.size(); i++) 
+			{
+				long c = cells.get(i);
+				if(tmp.containsKey(c)) 
+				{
+					tmp.put(c, i);
+					found++;
+					if(found == stable_ids.length) break;
+				}
+			}
+		}
+		// Prepare output res
+		long[] res = new long[stable_ids.length];
+		for (int i = 0; i < stable_ids.length; i++) res[i] = tmp.get(stable_ids[i]);
 		
 		return res;
 	}
@@ -606,6 +776,27 @@ public class LoomFile
 		int nbChunks = (int)(length / StringArray64.chunkSize()) + 1;
 		for(int i = 0; i < nbChunks; i++) res.set(i, this.handle.string().readArrayBlock(path, StringArray64.chunkSize(), i));
 		return res;
+	}
+	
+	public String readString(String path)
+	{
+		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
+		if(!this.handle.object().exists(path)) new ErrorJSON("This dataset does not exist:" + path);
+		return this.handle.string().read(path);
+	}
+	
+	public float readFloat(String path)
+	{
+		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
+		if(!this.handle.object().exists(path)) new ErrorJSON("This dataset does not exist:" + path);
+		return this.handle.float32().read(path);
+	}
+	
+	public int readInt(String path)
+	{
+		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
+		if(!this.handle.object().exists(path)) new ErrorJSON("This dataset does not exist:" + path);
+		return this.handle.int32().read(path);
 	}
 	
 	public StringArray64 getCellNames()
@@ -729,6 +920,27 @@ public class LoomFile
 		int nbChunks = (int)(array.size() / LongArray64.chunkSize()) + 1;
 		((IHDF5Writer)this.handle).int64().createArray(path, array.size(), (int)Math.min(LongArray64.chunkSize(), array.size()));
 		for(int i = 0; i < nbChunks; i++) ((IHDF5Writer)this.handle).int64().writeArrayBlock(path, array.getByChunk(i), i);
+	}
+	
+	public void writeFloat(String path, float value)
+	{
+		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
+		if(this.readOnly) new ErrorJSON("Cannot write in readOnly Loom file");
+		((IHDF5Writer)this.handle).float32().write(path, value);
+	}
+	
+	public void writeInt(String path, int value)
+	{
+		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
+		if(this.readOnly) new ErrorJSON("Cannot write in readOnly Loom file");
+		((IHDF5Writer)this.handle).int32().write(path, value);
+	}
+	
+	public void writeString(String path, String value)
+	{
+		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
+		if(this.readOnly) new ErrorJSON("Cannot write in readOnly Loom file");
+		((IHDF5Writer)this.handle).string().write(path, value);
 	}
 	
 	public void writeMatrixMetadata(String path, float[][] data)
@@ -885,137 +1097,450 @@ public class LoomFile
 	}
     
     /**** Static methods ******/
+	public static void copyFloatMatrixByCell(String path, LoomFile from, LoomFile to)
+	{
+    	LoomFile.copyFloatMatrixByCell(path, from, to, null, null);
+	}
+	
+    public static void copyFloatMatrixByCell(String path, LoomFile from, LoomFile to, LoomData data)
+	{
+    	LoomFile.copyFloatMatrixByCell(path, from, to, null, data);
+	}
+    
+    public static void copyFloatMatrixByCell(String path, LoomFile from, LoomFile to, HashSet<Long> toFilterGenes, LoomData data)
+	{
+    	if(toFilterGenes == null) toFilterGenes = new HashSet<Long>();
+
+		long[] dim = from.getDimensions(); // dim[0] == genes
+    	if(data != null && data.nber_genes != (dim[0] - toFilterGenes.size())) new ErrorJSON("data size does not match!");
+    	if(data != null && data.nber_cells != dim[1]) new ErrorJSON("data size does not match!");	
+		
+    	int[] blockSize = from.getChunkSizes();
+		blockSize[0] = 64; // We take all rows anyways, so we can change to whatever size we want
+		if(blockSize[1] < 64 && 64 % blockSize[1] == 0) blockSize[1] = 64; // If chunk < 64 and multiple of 64, then better to pass to 64. If not, then we keep the original stuff
+		int nbTotalBlocks = (int)Math.ceil((float)dim[1] / blockSize[1]);
+    	
+    	// Initialize main matrix in Loom with 0s
+    	to.createEmptyFloat32MatrixDataset(path, dim[0] - toFilterGenes.size(), nbTotalBlocks * blockSize[1], blockSize[0], blockSize[1]); // I create a bit more cols, that will be filtered later on
+    	
+    	// Read the original file blockSize x totalNbGenes
+		System.out.println("Writing & Parsing " + nbTotalBlocks + " independent blocks...");
+		for(int nbBlocks = 0; nbBlocks < nbTotalBlocks; nbBlocks++)
+		{
+			// Retrieve the blocks that will contain all columns (because we write gene by gene)
+			float[][] subMatrix = from.readFloatBlock(path, (int)dim[0], blockSize[1], 0l, nbBlocks); // TODO handle bigger datasets? Why blockSize is int? Am I doing the correct stuff?
+			
+			// Compute stats if needed (for parsing mainly)
+			if(data != null)
+			{
+				// Parsing Data and generating summary annotations
+				int i_filt_index = -1;
+				for(int i = 0; i < subMatrix.length; i++) // Original index of gene
+				{
+					if(!toFilterGenes.contains((long)i)) // If not gene filtered
+					{
+						i_filt_index++;
+						for(int y = 0; y < subMatrix[0].length; y++) // cells
+						{
+							long j = y + nbBlocks * blockSize[1]; // Original index of cells
+							
+			    			if(j < dim[1]) // In case the block is bigger than the number of cells
+			    			{
+								float value = subMatrix[i][y];
+								
+								if(data.is_count_table && Math.abs(value - Math.round(value)) > 1E-5) data.is_count_table = false;
+									
+				    			// Handle biotype count per cell
+				    			String biotype = data.biotypes.get(i_filt_index);
+				    			if(biotype.equals("protein_coding")) data.proteinCodingContent.set(j, data.proteinCodingContent.get(j) + value);
+					    		else if(biotype.equals("rRNA")) data.ribosomalContent.set(j, data.ribosomalContent.get(j) + value);
+				    			if(data.chromosomes.get(i_filt_index).equals("MT")) data.mitochondrialContent.set(j, data.mitochondrialContent.get(j) + value);
+				        			
+				        		// Generate the sums
+				    			data.depth.set(j, data.depth.get(j) + value);
+				    			data.sum.set(i_filt_index, data.sum.get(i_filt_index) + value);
+									
+								// Number of zeroes / detected genes 
+								if(value == 0) data.nber_zeros++;
+								else data.detected_genes.set(j, data.detected_genes.get(j) + 1);
+							}
+		    			}
+					}
+				}
+			}
+			
+			// Restraining to non-filtered cells
+			float[][] tmpMatrix = subMatrix;
+			if(!toFilterGenes.isEmpty())
+			{
+				tmpMatrix = new float[(int)dim[0] - toFilterGenes.size()][blockSize[1]]; // TODO handle bigger datasets?
+				int rowIndex = 0;
+				for(int i = 0; i < subMatrix.length; i++)
+				{
+					if(!toFilterGenes.contains((long)i)) 
+					{
+						for(int j = 0; j < subMatrix[i].length; j++) tmpMatrix[rowIndex][j] = subMatrix[i][j];
+						rowIndex++;
+					}
+				}
+			}
+			else if(subMatrix[0].length < blockSize[1]) // Adapting the size to block size if last block
+			{
+				tmpMatrix = new float[(int)dim[0]][blockSize[1]];
+				for(int i = 0; i < subMatrix.length; i++) for(int j = 0; j < subMatrix[i].length; j++) tmpMatrix[i][j] = subMatrix[i][j];
+			}
+			
+			// Writing this block to output
+			to.writeFloatBlockDataset(path, tmpMatrix, 0, nbBlocks);
+		}
+		to.resizeDataset(path, (int)dim[0] - toFilterGenes.size(), (int)dim[1]); // Cause writing fixed-size blocks can extend the matrix size with 0
+	}
+    
+    public static void copyFloatMatrixByGene(String path, LoomFile from, LoomFile to, LoomData data)
+	{
+    	LoomFile.copyFloatMatrixByGene(path, from, to, null, data);
+	}
+    
+    public static void copyFloatMatrixByGene(String path, LoomFile from, LoomFile to, HashSet<Long> toFilterCells, LoomData data)
+	{
+    	if(toFilterCells == null) toFilterCells = new HashSet<Long>();
+
+		long[] dim = from.getDimensions(); // dim[0] == genes
+    	if(data != null && data.nber_genes != dim[0]) new ErrorJSON("data size does not match!");
+    	if(data != null && data.nber_cells != (dim[1] - toFilterCells.size())) new ErrorJSON("data size does not match!");	
+		
+    	int[] blockSize = from.getChunkSizes();
+		blockSize[1] = 64; // We take all rows anyways, so we can change to whatever size we want
+		if(blockSize[0] < 64 && 64 % blockSize[0] == 0) blockSize[0] = 64; // If chunk < 64 and multiple of 64, then better to pass to 64. If not, then we keep the original stuff
+		int nbTotalBlocks = (int)Math.ceil((float)dim[0] / blockSize[0]);
+    	
+    	// Initialize main matrix in Loom with 0s
+    	to.createEmptyFloat32MatrixDataset(path, nbTotalBlocks * blockSize[0], dim[1] - toFilterCells.size(), blockSize[0], blockSize[1]); // I create a bit more cols, that will be filtered later on
+    	
+    	// Read the original file blockSize x totalNbGenes
+		System.out.println("Writing & Parsing " + nbTotalBlocks + " independent blocks...");
+		for(int nbBlocks = 0; nbBlocks < nbTotalBlocks; nbBlocks++)
+		{
+			// Retrieve the blocks that will contain all columns (because we write gene by gene)
+			float[][] subMatrix = from.readFloatBlock(path, blockSize[0], (int)dim[1], nbBlocks, 0l); // TODO handle bigger datasets? Why blockSize is int? Am I doing the correct stuff?
+			
+			// First, generate some stats if required (for parsing mainly)
+			if(data != null)
+			{
+				// Parsing Data and generating summary annotations
+				for(int x = 0; x < subMatrix.length; x++)
+				{
+					long i = x + nbBlocks * blockSize[0]; // Original index of genes
+	    			if(i < dim[0]) // In case the block is bigger than the number of genes
+	    			{
+	    				int j_filt_index = -1;
+						for(int j = 0; j < subMatrix[0].length; j++) // cells
+						{
+							if(!toFilterCells.contains((long)j)) // If this cell is not filtered
+							{
+								j_filt_index++;
+								
+								float value = subMatrix[x][j];
+								
+								if(data.is_count_table && Math.abs(value - Math.round(value)) > 1E-5) data.is_count_table = false;
+									
+				    			// Handle biotype count per cell
+				    			String biotype = data.biotypes.get(i);
+				    			if(biotype.equals("protein_coding")) data.proteinCodingContent.set(j_filt_index, data.proteinCodingContent.get(j_filt_index) + value);
+				    			else if(biotype.equals("rRNA")) data.ribosomalContent.set(j_filt_index, data.ribosomalContent.get(j_filt_index) + value);
+				    			if(data.chromosomes.get(i).equals("MT")) data.mitochondrialContent.set(j_filt_index, data.mitochondrialContent.get(j_filt_index) + value);
+				        			
+				        		// Generate the sums
+				    			data.depth.set(j_filt_index, data.depth.get(j_filt_index) + value);
+				    			data.sum.set(i, data.sum.get(i) + value);
+									
+								// Number of zeroes / detected genes 
+								if(value == 0) data.nber_zeros++;
+								else data.detected_genes.set(j_filt_index, data.detected_genes.get(j_filt_index) + 1);
+							}
+						}
+	    			}
+				}
+			}
+			
+			// Preparing to write data: restraining to non-filtered cells
+			float[][] tmpMatrix = subMatrix;
+			if(!toFilterCells.isEmpty())
+			{
+				tmpMatrix = new float[blockSize[0]][(int)dim[1] - toFilterCells.size()]; // TODO handle bigger datasets?
+				int colIndex = 0;
+				for(int j = 0; j < subMatrix[0].length; j++)
+				{
+					if(!toFilterCells.contains((long)j)) 
+					{
+						for(int i = 0; i < subMatrix.length; i++) tmpMatrix[i][colIndex] = subMatrix[i][j];
+						colIndex++;
+					}
+				}
+			}
+			else if(subMatrix.length < blockSize[0]) // Adapting the size to block size if last block
+			{
+				tmpMatrix = new float[blockSize[0]][(int)dim[1]];
+				for(int i = 0; i < subMatrix.length; i++) tmpMatrix[i] = subMatrix[i];
+			}
+		
+			// Writing this block to output
+			to.writeFloatBlockDataset(path, tmpMatrix, nbBlocks, 0);
+		}
+		to.resizeDataset(path, (int)dim[0], (int)dim[1] - toFilterCells.size()); // Cause writing fixed-size blocks can extend the matrix size with 0
+	}
+    
+    public static void copyIntMatrixByCell(String path, LoomFile from, LoomFile to)
+	{
+    	LoomFile.copyIntMatrixByCell(path, from, to, null, null);
+	}
+    
+    public static void copyIntMatrixByCell(String path, LoomFile from, LoomFile to, LoomData data)
+	{
+    	LoomFile.copyIntMatrixByCell(path, from, to, null, data);
+	}
+    
+    public static void copyIntMatrixByCell(String path, LoomFile from, LoomFile to, HashSet<Long> toFilterGenes, LoomData data)
+	{
+    	if(toFilterGenes == null) toFilterGenes = new HashSet<Long>();
+
+		long[] dim = from.getDimensions(); // dim[0] == genes
+    	if(data != null && data.nber_genes != (dim[0] - toFilterGenes.size())) new ErrorJSON("data size does not match!");
+    	if(data != null && data.nber_cells != dim[1]) new ErrorJSON("data size does not match!");	
+		
+    	int[] blockSize = from.getChunkSizes();
+		blockSize[0] = 64; // We take all rows anyways, so we can change to whatever size we want
+		if(blockSize[1] < 64 && 64 % blockSize[1] == 0) blockSize[1] = 64; // If chunk < 64 and multiple of 64, then better to pass to 64. If not, then we keep the original stuff
+		int nbTotalBlocks = (int)Math.ceil((float)dim[1] / blockSize[1]);
+    	
+    	// Initialize main matrix in Loom with 0s
+    	to.createEmptyInt32MatrixDataset(path, dim[0] - toFilterGenes.size(), nbTotalBlocks * blockSize[1], blockSize[0], blockSize[1]); // I create a bit more cols, that will be filtered later on
+    	
+    	// Read the original file blockSize x totalNbGenes
+		System.out.println("Writing & Parsing " + nbTotalBlocks + " independent blocks...");
+		for(int nbBlocks = 0; nbBlocks < nbTotalBlocks; nbBlocks++)
+		{
+			// Retrieve the blocks that will contain all columns (because we write gene by gene)
+			int[][] subMatrix = from.readIntBlock(path, (int)dim[0], blockSize[1], 0l, nbBlocks); // TODO handle bigger datasets? Why blockSize is int? Am I doing the correct stuff?
+			
+			// Compute stats if needed (for parsing mainly)
+			if(data != null)
+			{
+				int i_filt_index = -1;
+				// Parsing Data and generating summary annotations
+				for(int i = 0; i < subMatrix.length; i++) // Original index of gene
+				{
+					if(!toFilterGenes.contains((long)i)) // If not gene filtered
+					{
+						i_filt_index++;
+						
+						for(int y = 0; y < subMatrix[0].length; y++) // cells
+						{
+							long j = y + nbBlocks * blockSize[1]; // Original index of cells
+							
+			    			if(j < dim[1]) // In case the block is bigger than the number of cells
+			    			{
+								int value = subMatrix[i][y];
+								
+								if(data.is_count_table && Math.abs(value - Math.round(value)) > 1E-5) data.is_count_table = false;
+									
+				    			// Handle biotype count per cell
+				    			String biotype = data.biotypes.get(i_filt_index);
+				    			if(biotype.equals("protein_coding")) data.proteinCodingContent.set(j, data.proteinCodingContent.get(j) + value);
+				    			else if(biotype.equals("rRNA")) data.ribosomalContent.set(j, data.ribosomalContent.get(j) + value);
+				    			if(data.chromosomes.get(i_filt_index).equals("MT")) data.mitochondrialContent.set(j, data.mitochondrialContent.get(j) + value);
+				        			
+				        		// Generate the sums
+				    			data.depth.set(j, data.depth.get(j) + value);
+				    			data.sum.set(i_filt_index, data.sum.get(i_filt_index) + value);
+									
+								// Number of zeroes / detected genes 
+								if(value == 0) data.nber_zeros++;
+								else data.detected_genes.set(j, data.detected_genes.get(j) + 1);
+							}
+		    			}
+					}
+				}
+			}
+			
+			// Restraining to non-filtered cells
+			int[][] tmpMatrix = subMatrix;
+			if(!toFilterGenes.isEmpty())
+			{
+				tmpMatrix = new int[(int)dim[0] - toFilterGenes.size()][blockSize[1]]; // TODO handle bigger datasets?
+				int rowIndex = 0;
+				for(int i = 0; i < subMatrix.length; i++)
+				{
+					if(!toFilterGenes.contains((long)i)) 
+					{
+						for(int j = 0; j < subMatrix[i].length; j++) tmpMatrix[rowIndex][j] = subMatrix[i][j];
+						rowIndex++;
+					}
+				}
+			}
+			else if(subMatrix[0].length < blockSize[1]) // Adapting the size to block size if last block
+			{
+				tmpMatrix = new int[(int)dim[0]][blockSize[1]];
+				for(int i = 0; i < subMatrix.length; i++) for(int j = 0; j < subMatrix[i].length; j++) tmpMatrix[i][j] = subMatrix[i][j];
+			}
+			
+			// Writing this block to output
+			to.writeIntBlockDataset(path, tmpMatrix, 0, nbBlocks);
+		}
+		to.resizeDataset(path, (int)dim[0] - toFilterGenes.size(), (int)dim[1]); // Cause writing fixed-size blocks can extend the matrix size with 0
+	}
+    
+    public static void copyIntMatrixByGene(String path, LoomFile from, LoomFile to)
+	{
+    	LoomFile.copyIntMatrixByGene(path, from, to, null, null);
+	}
+    
+    public static void copyIntMatrixByGene(String path, LoomFile from, LoomFile to, LoomData data)
+	{
+    	LoomFile.copyIntMatrixByGene(path, from, to, null, data);
+	}
+    
+    public static void copyIntMatrixByGene(String path, LoomFile from, LoomFile to, HashSet<Long> toFilterCells, LoomData data)
+	{
+    	if(toFilterCells == null) toFilterCells = new HashSet<Long>();
+
+		long[] dim = from.getDimensions(); // dim[0] == genes
+    	if(data != null && data.nber_genes != dim[0]) new ErrorJSON("data size does not match!");
+    	if(data != null && data.nber_cells != (dim[1] - toFilterCells.size())) new ErrorJSON("data size does not match!");
+    	
+    	int[] blockSize = from.getChunkSizes();
+		blockSize[1] = 64; // We take all rows anyways, so we can change to whatever size we want
+		if(blockSize[0] < 64 && 64 % blockSize[0] == 0) blockSize[0] = 64; // If chunk < 64 and multiple of 64, then better to pass to 64. If not, then we keep the original stuff
+		int nbTotalBlocks = (int)Math.ceil((float)dim[0] / blockSize[0]);
+    	
+    	// Initialize main matrix in Loom with 0s
+    	to.createEmptyInt32MatrixDataset(path, nbTotalBlocks * blockSize[0], dim[1] - toFilterCells.size(), blockSize[0], blockSize[1]); // I create a bit more cols, that will be filtered later on
+    	
+    	// Read the original file blockSize x totalNbGenes
+		System.out.println("Writing & Parsing " + nbTotalBlocks + " independent blocks...");
+		for(int nbBlocks = 0; nbBlocks < nbTotalBlocks; nbBlocks++)
+		{
+			// Retrieve the blocks that will contain all columns (because we write gene by gene)
+			int[][] subMatrix = from.readIntBlock(path, blockSize[0], (int)dim[1], nbBlocks, 0l); // TODO handle bigger datasets? Why blockSize is int? Am I doing the correct stuff?
+			
+			// First, generate some stats if required (for parsing mainly)
+			if(data != null)
+			{
+				// Parsing Data and generating summary annotations
+				for(int x = 0; x < subMatrix.length; x++)
+				{
+					long i = x + nbBlocks * blockSize[0]; // Original index of genes
+	    			if(i < dim[0]) // In case the block is bigger than the number of genes
+	    			{
+	    				int j_filt_index = -1;
+						for(int j = 0; j < subMatrix[0].length; j++) // cells
+						{
+							if(!toFilterCells.contains((long)j)) // If this cell is not filtered
+							{
+								j_filt_index++;
+								
+								int value = subMatrix[x][j];
+								
+								if(data.is_count_table && Math.abs(value - Math.round(value)) > 1E-5) data.is_count_table = false;
+									
+				    			// Handle biotype count per cell
+				    			String biotype = data.biotypes.get(i);
+				    			if(biotype.equals("protein_coding")) data.proteinCodingContent.set(j_filt_index, data.proteinCodingContent.get(j_filt_index) + value);
+				    			else if(biotype.equals("rRNA")) data.ribosomalContent.set(j_filt_index, data.ribosomalContent.get(j_filt_index) + value);
+				    			if(data.chromosomes.get(i).equals("MT")) data.mitochondrialContent.set(j_filt_index, data.mitochondrialContent.get(j_filt_index) + value);
+				        			
+				        		// Generate the sums
+				    			data.depth.set(j_filt_index, data.depth.get(j_filt_index) + value);
+				    			data.sum.set(i, data.sum.get(i) + value);
+									
+								// Number of zeroes / detected genes 
+								if(value == 0) data.nber_zeros++;
+								else data.detected_genes.set(j_filt_index, data.detected_genes.get(j_filt_index) + 1);
+							}
+						}
+	    			}
+				}
+			}
+			
+			// Preparing to write data: restraining to non-filtered cells
+			int[][] tmpMatrix = subMatrix;
+			if(!toFilterCells.isEmpty())
+			{
+				tmpMatrix = new int[blockSize[0]][(int)dim[1] - toFilterCells.size()]; // TODO handle bigger datasets?
+				int colIndex = 0;
+				for(int j = 0; j < subMatrix[0].length; j++)
+				{
+					if(!toFilterCells.contains((long)j)) 
+					{
+						for(int i = 0; i < subMatrix.length; i++) tmpMatrix[i][colIndex] = subMatrix[i][j];
+						colIndex++;
+					}
+				}
+			}
+			else if(subMatrix.length < blockSize[0]) // Adapting the size to block size if last block
+			{
+				tmpMatrix = new int[blockSize[0]][(int)dim[1]];
+				for(int i = 0; i < subMatrix.length; i++) tmpMatrix[i] = subMatrix[i];
+			}
+		
+			// Writing this block to output
+			to.writeIntBlockDataset(path, tmpMatrix, nbBlocks, 0);
+		}
+		to.resizeDataset(path, (int)dim[0], (int)dim[1] - toFilterCells.size()); // Cause writing fixed-size blocks can extend the matrix size with 0
+	}
     
     public static boolean copyMetadata(String path, LoomFile from, LoomFile to)
 	{
-    	if(to.readOnly) new ErrorJSON("Cannot write metadata in 'to' Loom File. Please open it for writing.");
-		
-		long[] dim = from.getDimensions(path);
-		int[] blockSize = from.getChunkSizes(path);
-		boolean flag_copied = false;
-		
-		if(to.exists(path)) to.removeMetadata(path); // Remove if existing
-		HDF5DataClass h5_class = from.getDataClass(path);
-		switch (h5_class) 
-		{
-			case FLOAT:	
-				if(dim.length > 1 && dim[1] > 0) // Matrix
-				{
-					if(blockSize != null)
-					{
-						boolean resizeNeeded = false;
-						int nbTotalBlocks = (int)Math.ceil((double)dim[0] / blockSize[0]); // dim[0] === Nb genes ?
-						to.createEmptyFloat32MatrixDataset(path, dim[0], dim[1], blockSize[0], blockSize[1]); // Create matrix with same chunking
-						for(int nbBlocks = 0; nbBlocks < nbTotalBlocks; nbBlocks++)
-						{		
-							// Retrieve the blocks that will contain all columns
-							float[][] subMatrix = from.readFloatBlock(path, blockSize[0], (int)dim[1], nbBlocks, 0l); // Always read all blocks in one full line
-							
-							if(subMatrix.length < blockSize[0]) // Because it does not write the end of the array, if the size is less than blocksize
-							{
-								float[][] subMatrixTmp = new float[blockSize[0]][(int)dim[1]];
-								for (int i = 0; i < subMatrix.length; i++) for (int j = 0; j < subMatrix[i].length; j++) subMatrixTmp[i][j] = subMatrix[i][j];
-								subMatrix = subMatrixTmp;
-								resizeNeeded = true;
-							}
-							
-							// Writing data
-							to.writeFloatBlockDataset(path, subMatrix, nbBlocks, 0);
-						}
-						// Because we added extra rows
-						if(resizeNeeded) to.resizeDataset(path, dim[0], dim[1]);
-					}
-					else // No chunks = contiguous storage
-					{
-						to.writeFloatMatrix(path, from.readFloatMatrix(path));
-					}
-				}
-				else // Vector
-				{
-					to.writeFloatArray(path, from.readFloatArray(path));
-				}
-				flag_copied = true;
-				break;
-			case INTEGER:
-				if(dim.length > 1 && dim[1] > 0) // Matrix
-				{
-					if(blockSize != null)
-					{
-						boolean resizeNeeded = false;
-						int nbTotalBlocks = (int)Math.ceil((double)dim[0] / blockSize[0]); // dim[0] === Nb genes ?
-						to.createEmptyInt32MatrixDataset(path, dim[0], dim[1], blockSize[0], blockSize[1]); // Create matrix with same chunking
-						for(int nbBlocks = 0; nbBlocks < nbTotalBlocks; nbBlocks++)
-						{		
-							// Retrieve the blocks that will contain all columns
-							int[][] subMatrix = from.readIntBlock(path, blockSize[0], (int)dim[1], nbBlocks, 0l); // Always read all blocks in one full line
-							
-							if(subMatrix.length < blockSize[0]) // Because it does not write the end of the array, if the size is less than blocksize
-							{
-								int[][] subMatrixTmp = new int[blockSize[0]][(int)dim[1]];
-								for (int i = 0; i < subMatrix.length; i++) for (int j = 0; j < subMatrix[i].length; j++) subMatrixTmp[i][j] = subMatrix[i][j];
-								subMatrix = subMatrixTmp;
-								resizeNeeded = true;
-							}
-							
-							// Writing data
-							to.writeIntBlockDataset(path, subMatrix, nbBlocks, 0);
-						}
-						
-						// Because we added extra rows
-						if(resizeNeeded) to.resizeDataset(path, dim[0], dim[1]);
-					}
-					else // No chunks = contiguous storage
-					{
-						to.writeIntMatrix(path, from.readIntMatrix(path));
-					}
-				}
-				else // Vector
-				{
-					to.writeIntArray(path, from.readIntArray(path));
-				}
-				flag_copied = true;
-				break;
-			case STRING:
-				if(dim.length > 1 && dim[1] > 0) // Matrix
-				{
-					new ErrorJSON("Cannot create a 2D array of STRING");
-				}
-				else // Vector
-				{
-					to.writeStringArray(path, from.readStringArray(path));
-				}
-				flag_copied = true;
-				break;
-			case COMPOUND:
-				System.err.println("This metadata type COMPOUND is not handled... Skipping.");
-				break;
-			default:
-				new ErrorJSON("This metadata type " + h5_class + " is not handled.");
-				break;
-		}
-		return flag_copied;
+    	Metadata meta = from.fillInfoMetadata(path, false);
+    	return copyMetadata(meta, null, null, from, to);
 	}
     
-    public static void copyMetadata(Metadata m, HashSet<Long> toFilter, boolean filterCells, LoomFile from, LoomFile to)
+    public static boolean copyMetadata(Metadata m, LoomFile from, LoomFile to)
 	{
+    	return copyMetadata(m, null, null, from, to);
+	}
+    
+    public static boolean copyMetadata(Metadata m, HashSet<Long> toFilterGenes, HashSet<Long> toFilterCells, LoomFile from, LoomFile to)
+	{
+    	// Handling potential filters to perform
+    	if(toFilterCells == null) toFilterCells = new HashSet<Long>();
+    	if(toFilterGenes == null) toFilterGenes = new HashSet<Long>();
+    	if(!toFilterCells.isEmpty() && !toFilterGenes.isEmpty()) new ErrorJSON("Cannot filter both Genes and Cells at once (not implemented yet)");
+		HashSet<Long> toFilter = toFilterGenes;
+		if(!toFilterCells.isEmpty()) toFilter = toFilterCells;
+    	
+		// Check if destination can be written
     	if(to.readOnly) new ErrorJSON("Cannot write metadata in 'to' Loom File. Please open it for writing.");
-		HDF5DataClass h5_class = from.getDataClass(m.path);
+    	
+    	// Get dataset infos
 		long[] dim = from.getDimensions(m.path);
-		boolean writeAll = true;
-		if(m.on == MetaOn.CELL && filterCells) writeAll = false;
-		if(m.on == MetaOn.GENE && !filterCells) writeAll = false;
-		switch (h5_class) 
+		int[] blockSize = from.getChunkSizes(m.path);
+		boolean flag_copied = false;
+		if(to.exists(m.path)) to.removeMetadata(m.path); // Remove if existing
+		
+		// Depending on the data type, we handle it differently
+		HDF5DataClass h5_class = from.getDataClass(m.path);
+    	switch (h5_class) 
 		{
 			case FLOAT:	
-				if(dim.length > 1 && dim[1] > 0) // Matrix // TODO HANDLE BIG SIZE 2D
+				if(dim.length == 0) // Not an array => single value
 				{
-					float[][] values = from.handle.float32().readMatrix(m.path);
-					if(writeAll)((IHDF5Writer)to.handle).float32().writeMatrix(m.path, values);
-					else
+					to.writeFloat(m.path, from.readFloat(m.path));
+				}
+				else if(dim.length > 1 && dim[1] > 0) // Matrix
+				{
+					if(m.on == MetaOn.CELL || m.on == MetaOn.GENE || (m.on == MetaOn.EXPRESSION_MATRIX && blockSize == null)) // blocksize == null => contiguous storage
 					{
-						if(!filterCells) m.nbrow = values.length - toFilter.size();
-						else m.nbcol = values.length - toFilter.size();
-						float[][] towrite = new float[values.length - toFilter.size()][(int)dim[1]];
+						float[][] values = from.readFloatMatrix(m.path);
+						m.nbcol = dim[1];
+						if(m.on == MetaOn.CELL) m.nbrow = values.length - toFilterCells.size();
+						else if(m.on == MetaOn.GENE) m.nbrow = values.length - toFilterGenes.size();
+						else if(m.on == MetaOn.EXPRESSION_MATRIX)
+						{
+							m.nbrow = values.length - toFilterGenes.size();
+							m.nbcol = values[0].length - toFilterCells.size();
+						}
+						float[][] towrite = new float[(int)m.nbrow][(int)m.nbcol];
 						int k = 0;
 						for (int i = 0; i < values.length; i++) 
 						{
@@ -1025,18 +1550,28 @@ public class LoomFile
 								k++;
 							}
 						}
-						((IHDF5Writer)to.handle).float32().writeMatrix(m.path, towrite);
+						to.writeFloatMatrix(m.path, towrite);
 						m.size = to.getSizeInBytes(m.path);
+					} 
+					else if(m.on == MetaOn.EXPRESSION_MATRIX && blockSize != null) 
+					{
+						if(!toFilterCells.isEmpty()) copyFloatMatrixByGene(m.path, from, to, toFilterCells, null);
+						else if(!toFilterGenes.isEmpty()) copyFloatMatrixByCell(m.path, from, to, toFilterGenes, null);
+						else 
+						{
+					    	if(blockSize[0] / blockSize[1] > 2) copyFloatMatrixByCell(m.path, from, to, null); // Handling uneven chunks
+					    	else LoomFile.copyFloatMatrixByGene(m.path, from, to, null);
+						}
 					}
+					else new ErrorJSON("Why is this Matrix dataset stored here??" + m.path);
 				}
 				else // Vector
 				{
 					FloatArray64 values = from.readFloatArray(m.path);
-					if(writeAll) to.writeFloatArray(m.path, values);
-					else
+					if((!toFilterCells.isEmpty() && m.on == MetaOn.CELL) || (!toFilterGenes.isEmpty() && m.on == MetaOn.GENE))
 					{
-						if(!filterCells) m.nbrow = values.size() - toFilter.size();
-						else m.nbcol = values.size() - toFilter.size();
+						m.nbrow = values.size() - toFilterCells.size();
+						m.nbcol = values.size() - toFilterGenes.size(); // We don't really change the nb of cols. Just for ASAP.
 						FloatArray64 towrite = new FloatArray64(values.size() - toFilter.size());
 						long k = 0;
 						for (long i = 0; i < values.size(); i++) 
@@ -1050,17 +1585,28 @@ public class LoomFile
 						to.writeFloatArray(m.path, towrite);
 						m.size = to.getSizeInBytes(m.path);
 					}
+					else to.writeFloatArray(m.path, values);
 				}
+				flag_copied = true;
 				break;
 			case INTEGER:
-				if(dim.length > 1 && dim[1] > 0) // Matrix // TODO HANDLE BIG SIZE 2D
+				if(dim.length == 0) // Not an array => single value
 				{
-					int[][] values = from.handle.int32().readMatrix(m.path);
-					if(writeAll)((IHDF5Writer)to.handle).int32().writeMatrix(m.path, values);
-					else
+					to.writeInt(m.path, from.readInt(m.path));
+				}
+				else if(dim.length > 1 && dim[1] > 0) // Matrix
+				{
+					if(m.on == MetaOn.CELL || m.on == MetaOn.GENE || (m.on == MetaOn.EXPRESSION_MATRIX && blockSize == null)) // blocksize == null => contiguous storage
 					{
-						if(!filterCells) m.nbrow = values.length - toFilter.size();
-						else m.nbcol = values.length - toFilter.size();
+						int[][] values = from.readIntMatrix(m.path);
+						m.nbcol = dim[1];
+						if(m.on == MetaOn.CELL) m.nbrow = values.length - toFilterCells.size();
+						else if(m.on == MetaOn.GENE) m.nbrow = values.length - toFilterGenes.size();
+						else if(m.on == MetaOn.EXPRESSION_MATRIX)
+						{
+							m.nbrow = values.length - toFilterGenes.size();
+							m.nbcol = values[0].length - toFilterCells.size();
+						}
 						int[][] towrite = new int[values.length - toFilter.size()][(int)dim[1]];
 						int k = 0;
 						for (int i = 0; i < values.length; i++) 
@@ -1071,18 +1617,28 @@ public class LoomFile
 								k++;
 							}
 						}
-						((IHDF5Writer)to.handle).int32().writeMatrix(m.path, towrite);
+						to.writeIntMatrix(m.path, towrite);
 						m.size = to.getSizeInBytes(m.path);
+					} 
+					else if(m.on == MetaOn.EXPRESSION_MATRIX && blockSize != null) 
+					{
+						if(!toFilterCells.isEmpty()) copyIntMatrixByGene(m.path, from, to, toFilterCells, null);
+						else if(!toFilterGenes.isEmpty()) copyIntMatrixByCell(m.path, from, to, toFilterGenes, null);
+						else 
+						{
+					    	if(blockSize[0] / blockSize[1] > 2) copyIntMatrixByCell(m.path, from, to, null); // Handling uneven chunks
+					    	else LoomFile.copyIntMatrixByGene(m.path, from, to, null);
+						}
 					}
+					else new ErrorJSON("Why is this Matrix dataset stored here??" + m.path);
 				}
 				else // Vector
 				{
 					IntArray64 values = from.readIntArray(m.path);
-					if(writeAll) to.writeIntArray(m.path, values);
-					else
+					if((!toFilterCells.isEmpty() && m.on == MetaOn.CELL) || (!toFilterGenes.isEmpty() && m.on == MetaOn.GENE))
 					{
-						if(!filterCells) m.nbrow = values.size() - toFilter.size();
-						else m.nbcol = values.size() - toFilter.size();
+						m.nbrow = values.size() - toFilterCells.size();
+						m.nbcol = values.size() - toFilterGenes.size(); // We don't really change the nb of cols. Just for ASAP.
 						IntArray64 towrite = new IntArray64(values.size() - toFilter.size());
 						long k = 0;
 						for (long i = 0; i < values.size(); i++) 
@@ -1096,21 +1652,27 @@ public class LoomFile
 						to.writeIntArray(m.path, towrite);
 						m.size = to.getSizeInBytes(m.path);
 					}
+					else to.writeIntArray(m.path, values);
 				}
+				flag_copied = true;
 				break;
 			case STRING:
-				if(dim.length > 1 && dim[1] > 0) // Matrix
+				if(dim.length == 0) // Not an array => single value
+				{
+					to.writeString(m.path, from.readString(m.path));
+				}
+				else if(dim.length > 1 && dim[1] > 0) // Matrix
 				{
 					new ErrorJSON("Cannot create a 2D array of STRING");
 				}
 				else // Vector
 				{
 					StringArray64 values = from.readStringArray(m.path);
-					if(writeAll) to.writeStringArray(m.path, values);
-					else
-					{				
-						if(!filterCells) m.nbrow = values.size() - toFilter.size();
-						else m.nbcol = values.size() - toFilter.size();
+					
+					if((!toFilterCells.isEmpty() && m.on == MetaOn.CELL) || (!toFilterGenes.isEmpty() && m.on == MetaOn.GENE))
+					{
+						m.nbrow = values.size() - toFilterCells.size();
+						m.nbcol = values.size() - toFilterGenes.size(); // We don't really change the nb of cols. Just for ASAP.
 						StringArray64 towrite = new StringArray64(values.size() - toFilter.size());
 						long k = 0;
 						for (long i = 0; i < values.size(); i++) 
@@ -1124,12 +1686,15 @@ public class LoomFile
 						to.writeStringArray(m.path, towrite);
 						m.size = to.getSizeInBytes(m.path);
 					}
+					else to.writeStringArray(m.path, values);
 				}
+				flag_copied = true;
 				break;
 			default:
 				m.type = Metatype.NOT_HANDLED;
 				break;
 		}
+		return flag_copied;
 	}
     
     public static void fillLoomFile(LoomFile loom, LoomData data) // matrix.length == nb genes

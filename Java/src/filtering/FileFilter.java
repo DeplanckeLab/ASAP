@@ -53,73 +53,24 @@ public class FileFilter
 		else
 		{
 			long[] toFilter = FilterCellsJSON.parseJSON(Parameters.JSONFileName).discarded_cols;
+			if(toFilter == null) new ErrorJSON("Field 'discarded_cols' is missing from JSON");
 			for(long l:toFilter) cellIndexesToFilter.add(l);
 		}
 
 		System.out.println(cellIndexesToFilter.size() + " cells were found and will be filtered.");
 		
 		// Create new Loom filtered
-		System.out.println("Filtering the LOOM file...");
 		long[] dim = loom.getDimensions();
 		System.out.println("Current /matrix size = " + dim[0] + " x " + dim[1]);
-		System.out.println("Creating New Loom file with /matrix size = " + dim[0] + " x " + (dim[1] - cellIndexesToFilter.size()));
 		if(dim[1] - cellIndexesToFilter.size() == 0) new ErrorJSON("No more cells after filtering...");
-		
+		System.out.println("Creating New Loom file with /matrix size = " + dim[0] + " x " + (dim[1] - cellIndexesToFilter.size()));
 		LoomData data = new LoomData(dim[0], dim[1] - cellIndexesToFilter.size());
+		data.is_count_table = true;
 		LoomFile loomNew = new LoomFile("w", Parameters.outputFolder + "output.loom");
 		
 		// Process Main Matrix
-		int[] blockSize = loom.getChunkSizes();
-		loomNew.createEmptyFloat32MatrixDataset("/matrix", data.nber_genes, dim[1] - cellIndexesToFilter.size(), blockSize[0], blockSize[1]);
-    	    	
-    	// Read the file block per block according to natural storage
-		int nbTotalBlocks = (int)Math.ceil((double)data.nber_genes / blockSize[0]);
-		System.out.print("Writing " + nbTotalBlocks + " independent blocks...");
-		for(int nbBlocks = 0; nbBlocks < nbTotalBlocks; nbBlocks++)
-		{		
-			// Retrieve the blocks that will contain all columns (because we write gene by gene)
-			float[][] tmpMatrix = loom.readFloatBlock("/matrix", blockSize[0], (int)dim[1], nbBlocks, 0l);
-			
-			// Restraining to the non-filtered cells
-			float[][] subMatrix = new float[blockSize[0]][(int)dim[1] - cellIndexesToFilter.size()];
-			int colIndex = 0;
-			for(int j = 0; j < tmpMatrix[0].length; j++)
-			{
-				if(!cellIndexesToFilter.contains((long)j)) 
-				{
-					for(int i = 0; i < tmpMatrix.length; i++) subMatrix[i][colIndex] = tmpMatrix[i][j];
-					colIndex++;
-				}
-			}
+		LoomFile.copyFloatMatrixByGene("/matrix", loom, loomNew, cellIndexesToFilter, data); // data should be updated
 
-			// Parsing Data and generating summary annotations
-			for(int x = 0; x < tmpMatrix.length; x++)
-			{
-				int i = x + nbBlocks * blockSize[0]; // Original index
-				if(i < data.nber_genes) // In case the block is bigger than the number of genes
-				{
-					for(int j = 0; j < subMatrix[0].length; j++)
-					{
-						float value = subMatrix[x][j];
-						
-						if(data.is_count_table && Math.abs(value - Math.round(value)) > 1E-5) data.is_count_table = false;
-	        				
-	        			// Re-Generate the sums
-						data.sum.set(i, data.sum.get(i) + value);
-						
-						// Number of zeroes / detected genes 
-						if(value == 0) data.nber_zeros++;
-					}
-				}
-			}
-			
-			// Writing this block to output
-			loomNew.writeFloatBlockDataset("/matrix", subMatrix, nbBlocks, 0);
-		}
-		System.out.println(" OK!");
-		
-		loomNew.resizeDataset("/matrix", data.nber_genes, data.nber_cells); // Cause writing fixed-size blocks can extend the matrix size with 0
-		
 		// Process metadata
 		System.out.print("Now processing the Metadata...");
 		List<Metadata> meta = loom.listMetadata();
@@ -128,7 +79,7 @@ public class FileFilter
 		{
 			if(!m.path.equals("/row_attrs/_Sum")) 
 			{
-				LoomFile.copyMetadata(m, cellIndexesToFilter, true, loom, loomNew);
+				LoomFile.copyMetadata(m, null, cellIndexesToFilter, loom, loomNew);
 				data.meta.add(m);
 			}
 		}
@@ -144,66 +95,17 @@ public class FileFilter
 	private static void filterGenes(LoomFile loom, HashSet<Long> geneIndexesToFilter)
     {
     	// Create new Loom filtered
-		System.out.println("Filtering the LOOM file...");
 		long[] dim = loom.getDimensions();
 		System.out.println("Current /matrix size = " + dim[0] + " x " + dim[1]);
-		System.out.println("Creating New Loom file with /matrix size = " + (dim[0] - geneIndexesToFilter.size()) + " x " + dim[1]);
 		if(dim[0] - geneIndexesToFilter.size() == 0) new ErrorJSON("No more genes after filtering...");
-		
+		System.out.println("Creating New Loom file with /matrix size = " + (dim[0] - geneIndexesToFilter.size()) + " x " + dim[1]);
 		LoomData data = new LoomData(dim[0] - geneIndexesToFilter.size(), dim[1]);
+		data.is_count_table = true;
 		LoomFile loomNew = new LoomFile("w", Parameters.outputFolder + "output.loom");
 		
 		// Process Main Matrix
-		int[] blockSize = loom.getChunkSizes();
-		loomNew.createEmptyFloat32MatrixDataset("/matrix", dim[0] - geneIndexesToFilter.size(), data.nber_cells, blockSize[0], blockSize[1]);
+		LoomFile.copyFloatMatrixByCell("/matrix", loom, loomNew, geneIndexesToFilter, data); // data should be updated
 
-    	// Read the file block per block according to natural storage
-		int nbTotalBlocks = (int)Math.ceil((double)dim[1] / blockSize[1]);
-		System.out.print("Reading " + nbTotalBlocks + " independent blocks...");
-		for(int nbBlocks = 0; nbBlocks < nbTotalBlocks; nbBlocks++)
-		{		
-			// Retrieve the blocks that will contain all columns (because we write cell by cell)
-			float[][] tmpMatrix = loom.readFloatBlock("/matrix", (int)dim[0], blockSize[1], 0l, nbBlocks);
-
-			// Restraining to the non-filtered genes
-			float[][] subMatrix = new float[(int)dim[0] - geneIndexesToFilter.size()][(int)blockSize[1]]; // TODO does not work if too big array
-			int rowIndex = 0;
-			for(int i = 0; i < tmpMatrix.length; i++)
-			{
-				if(!geneIndexesToFilter.contains((long)i)) 
-				{
-					for(int j = 0; j < tmpMatrix[i].length; j++) subMatrix[rowIndex][j] = tmpMatrix[i][j];
-					rowIndex++;
-				}
-			}
-			
-			// Parsing Data and generating summary annotations
-			for(int i = 0; i < subMatrix.length; i++)
-			{
-				for(int y = 0; y < tmpMatrix[0].length; y++) // tmpmatrix because if too many cells, it would fail :)
-				{
-					float value = subMatrix[i][y];
-				
-					int j = y + nbBlocks * blockSize[1]; // Original index
-					
-					if(data.is_count_table && Math.abs(value - Math.round(value)) > 1E-5) data.is_count_table = false;
-	        				
-	        		// Re-Generate the sums
-					data.depth.set(j, data.depth.get(j) + value);
-					
-					// Number of zeroes / detected genes 
-					if(value == 0) data.nber_zeros++;
-					else data.detected_genes.set(j, data.detected_genes.get(j) + 1);
-				}
-			}
-			
-			// Writing this chunk to output
-			loomNew.writeFloatBlockDataset("/matrix", subMatrix, 0, nbBlocks);
-		}
-		System.out.println(" OK!");		
-		
-		loomNew.resizeDataset("/matrix", data.nber_genes, data.nber_cells); // Cause writing fixed-size blocks can extend the matrix size with 0
-		
 		// Process metadata
 		System.out.print("Now processing the Metadata...");
 		List<Metadata> meta = loom.listMetadata();
@@ -212,7 +114,7 @@ public class FileFilter
 		{
 			if(!m.path.equals("/col_attrs/_Depth") && !m.path.equals("/col_attrs/_Detected_Genes"))
 			{
-				LoomFile.copyMetadata(m, geneIndexesToFilter, false, loom, loomNew);
+				LoomFile.copyMetadata(m, geneIndexesToFilter, null, loom, loomNew);
 				data.meta.add(m);
 			}
 		}
@@ -224,6 +126,7 @@ public class FileFilter
 		m = new Metadata("/col_attrs/_Detected_Genes", Metatype.NUMERIC, MetaOn.CELL, data.detected_genes.size(), 1);
 		m.size = loomNew.getSizeInBytes("/col_attrs/_Detected_Genes");
 		data.meta.add(m);
+		loom.close();
 		loomNew.close();
 		FilterCellsJSON.writeOutputJSON(data);
     }
@@ -325,6 +228,7 @@ public class FileFilter
     	System.out.println(geneIndexesToFilter.size() +  " empty genes to filter.");
     	
     	int[] toKeep = FilterCellsJSON.parseJSON(Parameters.JSONFileName).kept_genes;
+    	if(toKeep == null) new ErrorJSON("JSON file does not have 'kept_genes' field");
     	HashSet<Integer> toKeepMap = new HashSet<>();
     	for(int s:toKeep) toKeepMap.add(s);
     	
@@ -332,7 +236,6 @@ public class FileFilter
     	System.out.println(geneIndexesToFilter.size() +  " genes to filter.");
     	
     	filterGenes(loom, geneIndexesToFilter);
-    	loom.close();
     }
     
     public static void filterBASIC() // Only remove empty genes
@@ -345,7 +248,6 @@ public class FileFilter
     	for(long i = 0; i < sum.size(); i++) if(sum.get(i) == 0) geneIndexesToFilter.add(i);
     	System.out.println(geneIndexesToFilter.size() +  " empty genes to filter.");
     	filterGenes(loom, geneIndexesToFilter);
-    	loom.close();
     }
     
     public static void filterCPM()
@@ -394,7 +296,6 @@ public class FileFilter
 		}
 		//loom.writeLayer("_CPM", cpm);
 		filterGenes(loom, geneIndexesToFilter);
-		loom.close();
     }
     
     /*public static void filterEXPRESSED() throws IOException

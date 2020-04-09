@@ -25,6 +25,27 @@ RunModularityClusteringCpp <- function(SNN, modularityFunction, resolution, algo
   .Call('_Seurat_RunModularityClusteringCpp', PACKAGE = 'Seurat', SNN, modularityFunction, resolution, algorithm, nRandomStarts, nIterations, randomSeed, printOutput, edgefilename)
 }
 
+# Internal helper function to dispatch to various neighbor finding methods
+NNHelper <- function(data, query = data, k, method, ...) {
+  args <- as.list(x = sys.frame(which = sys.nframe()))
+  args <- c(args, list(...))
+  return(
+    switch(
+      EXPR = method,
+      "rann" = {
+        args <- args[intersect(x = names(x = args), y = names(x = formals(fun = nn2)))]
+        do.call(what = 'nn2', args = args)
+      },
+      "annoy" = {
+        error.json("Not implemented yet")
+        #args <- args[intersect(x = names(x = args), y = names(x = formals(fun = AnnoyNN)))]
+        #do.call(what = 'AnnoyNN', args = args)
+      },
+      error.json("Invalid method. Please choose one of 'rann', 'annoy'")
+    )
+  )
+}
+
 GroupSingletons <- function(ids, SNN) {
   # identify singletons
   singletons <- c()
@@ -32,10 +53,10 @@ GroupSingletons <- function(ids, SNN) {
   singletons <- intersect(unique(ids), singletons)
   # calculate connectivity of singletons to other clusters, add singleton
   # to cluster it is most connected to
-  cluster_names <- as.character(unique(x = ids))
-  cluster_names <- setdiff(x = cluster_names, y = singletons)
-  connectivity <- vector(mode = "numeric", length = length(x = cluster_names))
-  names(x = connectivity) <- cluster_names
+  cluster_names <- as.character(unique(ids))
+  cluster_names <- setdiff(cluster_names, singletons)
+  connectivity <- vector(mode = "numeric", length = length(cluster_names))
+  names(connectivity) <- cluster_names
   new.ids <- ids
   for (i in singletons) {
     i.cells <- names(which(ids == i))
@@ -43,12 +64,15 @@ GroupSingletons <- function(ids, SNN) {
       j.cells <- names(which(ids == j))
       subSNN <- SNN[i.cells, j.cells]
       set.seed(1) # to match previous behavior, random seed being set in WhichCells
-      if (is.object(x = subSNN)) connectivity[j] <- sum(subSNN) / (nrow(x = subSNN) * ncol(x = subSNN))
-      else connectivity[j] <- mean(x = subSNN)
+      if (is.object(subSNN)) {
+        connectivity[j] <- sum(subSNN) / (nrow(subSNN) * ncol(subSNN))
+      } else {
+        connectivity[j] <- mean(subSNN)
+      }
     }
     m <- max(connectivity, na.rm = T)
     mi <- which(x = connectivity == m, arr.ind = TRUE)
-    closest_cluster <- sample(x = names(x = connectivity[mi]), 1)
+    closest_cluster <- sample(names(connectivity[mi]), 1)
     ids[i.cells] <- closest_cluster
   }
   if (length(x = singletons) > 0) message(paste(length(x = singletons), "singletons identified.", length(x = unique(x = ids)), "final clusters."))
@@ -125,24 +149,40 @@ RunLeiden <- function( adj_mat, partition.type = c('RBConfigurationVertexPartiti
   return(part$membership + 1)
 }
 
-FindNeighbors <- function(object, k.param = 20, prune.SNN = 1/15, nn.eps = 0) {
-  n.cells <- nrow(x = object)
+FindNeighbors <- function(object, nn.method = "rann", annoy.metric = "euclidean", k.param = 20, prune.SNN = 1/15, nn.eps = 0, do.compute.snn=T) {
+  if (is.null(dim(object))) {
+    warning("Object should have two dimensions, attempting to coerce to matrix", call. = FALSE)
+    object <- as.matrix(object)
+  }
+  if (is.null(rownames(object))) error.json("Please provide rownames (cell names) with the input object")
+  n.cells <- nrow(object)
   if (n.cells < k.param) {
-    data.warnings <<- list(name=paste0("k.param is larger than the number of cells. Set to ", n.cells - 1, "."), description=paste0("Setting k.param to number of cells/samples - 1"))
+    data.warnings <<- list(name=paste0("k.param is larger than the number of cells. Set to ", n.cells - 1, "."), description=paste0("Setting k.param to number of cells - 1"))
     k.param <- n.cells - 1
   }
   # find the k-nearest neighbors for each single cell
   message("Computing nearest neighbor graph")
-  knn <- nn2(data = object, k = k.param, searchtype = 'standard', eps = nn.eps)$nn.idx
-
+  nn.ranked <- NNHelper( data = object, k = k.param, method = nn.method, searchtype = "standard", eps = nn.eps, metric = annoy.metric)
+  nn.ranked <- nn.ranked$nn.idx
+  
   # Compute SNN
-  message("Computing SNN")
-  snn.matrix <- ComputeSNN(nn_ranked = knn, prune = prune.SNN)
-  rownames(x = snn.matrix) <- 1:nrow(snn.matrix)
-  colnames(x = snn.matrix) <- 1:nrow(snn.matrix)
-  snn.matrix <- as.Graph(x = snn.matrix)
-
-  return(snn.matrix)
+  if(do.compute.snn){
+    message("Computing SNN")
+    snn.matrix <- ComputeSNN(nn_ranked = nn.ranked, prune = prune.SNN)
+    rownames(snn.matrix) <- rownames(object)
+    colnames(snn.matrix) <- rownames(object)
+    snn.matrix <- as.Graph(snn.matrix)
+    
+    return(snn.matrix)
+  }
+  
+  # convert nn.ranked into a Graph
+  j <- as.numeric(t(nn.ranked))
+  i <- ((1:length(j)) - 1) %/% k.param + 1
+  nn.matrix <- as(sparseMatrix(i = i, j = j, x = 1, dims = c(nrow(object), nrow(object))), Class = "Graph")
+  rownames(nn.matrix) <- rownames(object)
+  colnames(nn.matrix) <- rownames(object)
+  return(nn.matrix)
 }
 
 FindClusters <- function(object, modularity.fxn = 1, resolution = 0.8, algorithm = "louvain", n.start = 10, n.iter = 10, random.seed = 42) {
@@ -153,10 +193,11 @@ FindClusters <- function(object, modularity.fxn = 1, resolution = 0.8, algorithm
   } else if (algorithm == "SLM") {
     ids <- RunModularityClusteringCpp(SNN = object, modularity = modularity.fxn, resolution = resolution, algorithm = 3, nRandomStarts = n.start, nIterations = n.iter, randomSeed = random.seed, printOutput = T, edgefilename = '')
   } else if (algorithm == "leiden") {
-    require(reticulate)
+    suppressPackageStartupMessages(require(reticulate))
     ids <- RunLeiden(adj_mat = object, partition.type = "RBConfigurationVertexPartition", initial.membership = NULL, weights = NULL, node.sizes = NULL, resolution.parameter = resolution)
   } else error.json("algorithm not recognised, it should be [louvain, leiden]")
   
+  names(ids) <- colnames(object)
   ids <- GroupSingletons(ids = ids, SNN = object)
   
   return(ids)
@@ -167,13 +208,13 @@ serialize <- function(widget) {
 }
 
 fviz_silhouette <- function (sil.obj) {
-  require(ggplot2)
-  require(plotly)
+  suppressPackageStartupMessages(require(ggplot2))
+  suppressPackageStartupMessages(require(plotly))
   if (inherits(sil.obj, c("eclust", "hcut", "pam", "clara", "fanny"))) df <- as.data.frame(sil.obj$silinfo$widths)
   else if (inherits(sil.obj, "silhouette")) df <- as.data.frame(sil.obj[, 1:3])
   else stop("Don't support an oject of class ", class(sil.obj))
   df <- df[order(df$cluster, -df$sil_width), ]
-  df$name <- factor(data.cell_names, levels = data.cell_names)
+  df$name <- factor(data.cell_names[as.numeric(rownames(df))], levels = data.cell_names[as.numeric(rownames(df))])
   df$cluster <- as.factor(df$cluster)
   #df$sil_width <- round(df$sil_width, 3)
   p <- ggplot(df, aes(x = name, y = sil_width)) + geom_bar(stat = "identity", aes(fill = cluster)) + 
@@ -183,16 +224,10 @@ fviz_silhouette <- function (sil.obj) {
   data.plotly <- plotly::ggplotly(p)
   
   write(serialize(data.plotly), file = paste0(output_dir, "/output.plot.json"), append=F)
-  
-  #for(i in 1:length(levels(df$cluster))){
-  #  for(j in 1:length(toto$x$data[[i]]$text)){
-  #    data.plotly$x$data[[i]]$text[j] <- gsub(x = data.plotly$x$data[[i]]$text[j], pattern = "<br />", replacement = "<br>")
-  #  }
-  #}
 }
 
 sihouette.plot <- function(data.clust.p, data.dist.p){
-  require(cluster)
+  suppressPackageStartupMessages(require(cluster))
   data.silho <- apply(as.matrix(data.clust.p), 2, function(x) mean(silhouette(x, data.dist.p)[,3]))
   best.k <- names(which(data.silho == max(data.silho)))
   fviz_silhouette(silhouette(data.clust.p[,best.k], data.dist.p)) # Beware any mix between "k" and k. It works for now
@@ -207,6 +242,10 @@ data.parsed <- fetch_dataset(data.loom, input_matrix_dataset, transpose = to_tra
 data.cell_names <- fetch_dataset(data.loom, "/col_attrs/CellID") # This makes everything stay lock forever
 close_all()
 if(is.null(data.parsed)) error.json("This dataset does not exist in the Loom file")
+
+# Replace NaNs by NA
+is.nan.data.frame <- function(x) do.call(cbind, lapply(x, is.nan))
+data.parsed[is.nan(data.parsed)] <- NA
 
 ### Handle clusters
 if(std_method_name != "seurat"){
@@ -240,10 +279,10 @@ if (std_method_name == "kmeans"){
   # Parameters
   dist.method <- args[7]
   if(is.null(dist.method) | is.na(dist.method)) dist.method <- "euclidean"
-
+  
   clust.method <- args[8]
   if(is.null(clust.method) | is.na(clust.method)) clust.method <- "ward.D2"
-
+  
   if(dist.method == "pearson" || dist.method == "spearman") { # Distance matrix
     data.dist <- as.dist(1 - cor(data.parsed, method = dist.method))
   } else {
@@ -263,8 +302,8 @@ if (std_method_name == "kmeans"){
   }
 } else if (std_method_name == "sc3"){ # Default [8, T]
   # Packages
-  require(SC3)
-  require(SingleCellExperiment)
+  suppressPackageStartupMessages(require(SC3))
+  suppressPackageStartupMessages(require(SingleCellExperiment))
   
   # Parameters
   nb.cores <- args[7]
@@ -274,12 +313,18 @@ if (std_method_name == "kmeans"){
   }
   
   # Check if we don't have non-variant cells
-  if(!all(apply(data.parsed, 2, var, na.rm=TRUE) != 0)) error.json("Cannot rescale a constant/zero column to unit variance. Some Cells have constant/zero variance, SC3 cannot run.")
+  tryCatch({
+    if(!all(apply(data.parsed, 2, var, na.rm=TRUE) != 0)) error.json("Cannot rescale a constant/zero column to unit variance. Some Cells have constant/zero variance, SC3 cannot run. Please consider filtering your dataset for empty cells.")
+    if(!all(apply(data.parsed, 1, var, na.rm=TRUE) != 0)) error.json("Cannot rescale a constant/zero column to unit variance. Some Genes have constant/zero variance, SC3 cannot run. Please consider filtering your dataset for low/non-expressed genes.")
+  }, error = function(err) {
+    if(grepl("missing value where TRUE/FALSE needed", err)) error.json("Your dataset contains NA values. It can come from the Normalization/Scaling step, if this was performed on non-filtered data (rows of 0s for e.g.). Please consider filtering your dataset for empty cells and low/non-expressed genes prior normalization/scaling.")
+    error.json(err)
+  })
   
   # Prepare the data (SCE format) assuming the data is log2, to prevent SC3 to further log it
   data.sc3 <- SingleCellExperiment(assays = list(logcounts = as.matrix(data.parsed)))
   rowData(data.sc3)$feature_symbol = 1:nrow(data.parsed)
- 
+  
   # Starting SC3
   best.k <- 2
   if(length(nbclust) == 1){
@@ -292,11 +337,15 @@ if (std_method_name == "kmeans"){
     best.k <- as.numeric(names(which(data.silho == max(data.silho))))
     fviz_silhouette(data.sc3@metadata$sc3$consensus[[as.character(best.k)]]$silhouette)
   }
-  data.out <- eval(bquote(`$`(data.sc3@metadata$sc3$consensus, .(as.name(best.k)))))$silhouette[,"cluster"]
+  if(ncol(data.parsed) > 5000) data.sc3 <- sc3_run_svm(data.sc3, ks = best.k) # Impute the others
+  data.out <- colData(data.sc3)[[paste0("sc3_",best.k,"_clusters")]]
+  names(data.out) <- NULL
+  #data.out <- eval(bquote(`$`(data.sc3@metadata$sc3$consensus, .(as.name(best.k)))))$silhouette[,"cluster"]
 } else if (std_method_name == "seurat"){
   # Packages
-  require(RANN) # For SNN
-  require(Seurat)
+  suppressPackageStartupMessages(require(RANN)) # For SNN
+  suppressPackageStartupMessages(require(Matrix)) # For sparseMatrix() function
+  suppressPackageStartupMessages(require(Seurat))
   
   # Identify clusters of cells by a shared nearest neighbor (SNN) modularity optimization based clustering algorithm. First calculate k-nearest neighbors and construct the SNN graph. Then optimize the modularity function to determine clusters. For a full description of the algorithms, see Waltman and van Eck (2013)
   
@@ -304,19 +353,28 @@ if (std_method_name == "kmeans"){
   k.param <- args[6] # Defines k for the k-nearest neighbor algorithm
   if(is.null(k.param) | is.na(k.param)) k.param <- 20
   else k.param = as.numeric(k.param)
-
+  
   resolution <- args[7] # Use a resolution above (below) 1.0 if you want to obtain a larger (smaller) number of communities/clusters.
   if(is.null(resolution) | is.na(resolution)) resolution <- 0.8
   else resolution = as.numeric(resolution)
-
+  
   algorithm <- args[8] # Algorithm for modularity optimization (louvain; louvain_with_multilevel_refinement; SLM Smart Local Moving; leiden)
-  if(is.null(algorithm) | is.na(algorithm)) algorithm <- "SLM"
-
+  if(is.null(algorithm) | is.na(algorithm)) algorithm <- "louvain"
+  
+  is.snn <- args[9] # Defines k for the k-nearest neighbor algorithm
+  if(is.null(is.snn) | is.na(is.snn)) is.snn <- "snn"
+  if(is.snn == "snn"){
+    is.snn <- T
+  } else if(is.snn == "nn") {
+    is.snn <- F
+  } else error.json(paste("Last parameter should be 'nn' or 'snn', you entered", is.snn))
+    
   # Run first SNN (Shared Nearest Neighbor graph)
-  snn <- FindNeighbors(t(data.parsed), k.param = k.param, prune.SNN = 1/15, nn.eps = 0)
+  nn.graph <- FindNeighbors(t(data.parsed), k.param = k.param, prune.SNN = 1/15, nn.eps = 0, do.compute.snn = is.snn)
   
   # Run graph-based clustering
-  data.out <- FindClusters(snn, modularity.fxn = 1, resolution = resolution, algorithm = algorithm, n.start = 10, n.iter = 10)
+  data.out <- FindClusters(nn.graph, resolution = resolution, algorithm = algorithm, n.start = 10, n.iter = 10)
+  data.out <- as.numeric(data.out)
 
   # Correct if 0
   if(min(data.out) == 0) data.out <- data.out + 1

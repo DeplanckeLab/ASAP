@@ -70,7 +70,6 @@ public class FileParser
     
     public static void preparse()
     {
-    	System.out.println("Preparsing file : " + Parameters.fileName);
     	HDF5Tools.checkIfHDF5orLoom(); // Check if it is an HDF5 archive
     	if(Parameters.fileType == FileType.H5_10x) H510xHandler.preparse();
     	else if(Parameters.fileType == FileType.LOOM) LoomHandler.preparse();
@@ -82,7 +81,7 @@ public class FileParser
 				ArrayList<String> files = CompressionHandler.getList();
 				if(files == null) 
 				{
-					System.out.println("File format not detected. Assumed to be plain text.");
+					// File format not detected. Assumed to be plain text
 					Parameters.fileType = FileType.RAW_TEXT;
 					try
 					{
@@ -97,7 +96,7 @@ public class FileParser
 					if(files.size() == 0) new ErrorJSON("Your archive/compressed file is empty or corrupted.\",\"detected_format\":\"" + Parameters.fileType);
 					else if(files.size() == 1)
 					{
-						System.out.println("A single file was detected in your archive. Processing automatically the preparsing...");
+						// A single file was detected in the archive, running the preparsing automatically
 						Parameters.selection = files.get(0);
 	    				try
 	    				{
@@ -109,7 +108,7 @@ public class FileParser
 					}
 					else
 					{
-						System.out.println("Several files are detected in your archive, but no selection was made using -sel option. Therefore creating a JSON listing the archive content.");
+						// Several files detected in the archive, but no selection was made using -sel option. Therefore creating a JSON listing the archive content
 						PreparsingJSON.writeListingJSON(files);
 					}
 				}
