@@ -284,7 +284,7 @@ data.out <- switch(std_method_name,
 # Output results --------------------------------------------------------------
 # Open Loom in writing mode for writing results
 data.loom <- open_with_lock(input_matrix_filename, "r+")
-add_matrix_dataset(handle = data.loom, dataset_path = output_matrix_dataset, dataset_object = data.out)
+add_matrix_dataset(handle = data.loom, dataset_path = output_matrix_dataset, dataset_object = t(data.out))
 close_all()
 
 # Generate default JSON file
