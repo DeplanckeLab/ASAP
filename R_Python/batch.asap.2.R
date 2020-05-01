@@ -303,7 +303,11 @@ data.out <- switch(std_method_name,
 # Output results --------------------------------------------------------------
 # Open Loom in writing mode for writing results
 data.loom <- open_with_lock(input_matrix_filename, "r+")
-add_matrix_dataset(handle = data.loom, 
-                   dataset_path = output_matrix_dataset,
-                   dataset_object = data.out)
+add_matrix_dataset(handle = data.loom, dataset_path = output_matrix_dataset, dataset_object = data.out)
 close_all()
+
+# Generate default JSON file
+stats <- list()
+stats$nber_rows = ncol(data.out)
+stats$nber_cols = nrow(data.out)
+write(jsonlite::toJSON(stats, method="C", auto_unbox=T, digits = NA), file = paste0(output_dir, "/output.json"), append=F)
