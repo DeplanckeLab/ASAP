@@ -1,12 +1,4 @@
 # NOTES FOR VINCENT
-# 1) I implemented 3 methods: limma, combat, mnn
-# 2) I didn't implement svaseq, because it doesn't return normalised counts and
-#    I didn't implement RUV because they need spikeins as input and in the 
-#    table gene names are just numbers. But if you point out to me, where they 
-#    are, I will.
-# 3) [IMPORTANT] All methods require normalized data. In your input parameters
-#    you have is_count_table, I would suggest to swap it for is_normalized or
-#    something like that
 # 4) I consider factorial/character submitted variables as batch, and numeric 
 #    ones as covariates, which I regress out
 # 5) Limma can handle 2 batch (factorial) variables, ComBat and MNN can only 
@@ -15,9 +7,6 @@
 # 6) MNN doesn't handle covariates, I issue a warning if they are submitted. 
 # 7) I put rather a lot of warnings (I used warning command), please check that
 # they are displayed properly
-# 8) MNN has special parameters, I added them as optional ones (see args[8])
-
-# ENJOY! =)
 
 # Libraries -------------------------------------------------------------------
 source("hdf5_lib.R")
@@ -204,31 +193,20 @@ std_method_name <- args[3]
 input_matrix_dataset <- args[4]
 output_matrix_dataset <- args[5]
 batch_dataset <- args[6] # Vectorized!!!
-is_count_table <- args[7]
 
 if (std_method_name == 'mnn') {
   mnn_k <- 20
-  if (!is.na(args[8])) {
-    mnn_k <- as.integer(args[8])
+  if (!is.na(args[7])) {
+    mnn_k <- as.integer(args[7])
   } else {
     warning("No k for MNN was submitted, using default one (20)")
   }
   if (!is.na(args[8])) {
-    mnn_sigma <- as.numeric(args[9])
+    mnn_sigma <- as.numeric(args[8])
   } else {
     warning("No sigma for MNN was submitted, using default one (0.1)")
   }
 }
-
-#input_matrix_filename <- '1of101_scaling_20816_output.loom' #args[1]
-#output_dir <- '.' #args[2]
-#std_method_name <- 'limma' #args[3]
-#input_matrix_dataset <- "/matrix" #args[4]
-#output_matrix_dataset <- 'abu' #args[5]
-## Vectorized!!! 
-#batch_dataset <- c("col_attrs/donor_organism.sex", 
-#                   "col_attrs/_Depth") #args[6]
-#is_count_table <- "false" #args[7]
 
 # check, that method is implemented
 if (!std_method_name %in% batchRemoveMethods) {
@@ -239,16 +217,9 @@ if (!std_method_name %in% batchRemoveMethods) {
 if(is.null(batch_dataset) || is.na(batch_dataset) || batch_dataset == "" ||
    batch_dataset == "null"){ 
   error.json("To remove batch effect you need to submit batch variables!")
-}
-
-# assign, if count table is true or not & check that it's normalized
-if(is_count_table == "true") { 
-  is_count_table <- T
-  error.json("Normalized count table is required to perform batch correction")
-} else if(is_count_table == "false") {
-  is_count_table <- F
 } else {
-  error.json("is_count_table should be 'true' or 'false'")
+  batch_dataset <- unique(strsplit(batch_dataset, split = ",")[[1]])
+  message(length(batch_dataset), " covariates detected. Will add covariates to the model.")
 }
 
 data.warnings <- NULL
@@ -268,10 +239,6 @@ data.gene <- fetch_dataset(data.loom, "/row_attrs/Gene")
 
 # Parse batch effect vars: remove duplicates and pass numeric as covariates----
 # remove non-unique batch variables
-if (length(unique(batch_dataset)) != length(batch_dataset)) {
-  error.json('Detected non-unique batch variables, removed duplicates')
-  batch_vars <- unique(batch_dataset)
-}
 data.batch <- lapply(batch_dataset, function(x) fetch_dataset(data.loom, x))
 close_file(data.loom)
 

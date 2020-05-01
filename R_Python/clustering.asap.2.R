@@ -340,6 +340,7 @@ if (std_method_name == "kmeans"){
   if(ncol(data.parsed) > 5000) data.sc3 <- sc3_run_svm(data.sc3, ks = best.k) # Impute the others
   data.out <- colData(data.sc3)[[paste0("sc3_",best.k,"_clusters")]]
   names(data.out) <- NULL
+  data.out <- as.numeric(as.character(data.out))
   #data.out <- eval(bquote(`$`(data.sc3@metadata$sc3$consensus, .(as.name(best.k)))))$silhouette[,"cluster"]
 } else if (std_method_name == "seurat"){
   # Packages

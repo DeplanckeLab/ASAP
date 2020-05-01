@@ -35,10 +35,14 @@ if (mode == "build"){
   ##message(nrow(data.json), " methods were found.")
   for(i in 1:nrow(data.json)){ # For every method
     data.runs <- data.json[i, "runs"][[1]]
+    data.runs$nber_cols <- as.numeric(data.runs$nber_cols)
+    data.runs$nber_rows <- as.numeric(data.runs$nber_rows)
+    
     #message(nrow(data.runs), " runs were found for method '", data.json[i, "std_method_name"], "'")
     
     # 1. Predicting t
     data.runs.t <- data.runs[!is.na(data.runs$t) & !is.na(data.runs$nber_rows) & !is.na(data.runs$nber_cols),]
+
     #diff <- nrow(data.runs) - nrow(data.runs.t)
     #if(diff > 0) message("[Warning!] ", diff, " runs have NAs and cannot be used for predicting t")
     if(nrow(data.runs.t) < 3) {
