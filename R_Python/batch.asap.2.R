@@ -8,12 +8,16 @@
 # 7) I put rather a lot of warnings (I used warning command), please check that
 # they are displayed properly
 
+# Options ---------------------------------------------------------------------
+options(echo = T)
+args <- commandArgs(trailingOnly = T)
+
 # Libraries -------------------------------------------------------------------
-source("hdf5_lib.R")
-require(jsonlite)
-require(limma)
-require(scran) # for MNN
-require(sva) # Combat
+suppressPackageStartupMessages(source("hdf5_lib.R"))
+suppressPackageStartupMessages(require(jsonlite))
+suppressPackageStartupMessages(require(limma))
+suppressPackageStartupMessages(require(scran)) # MNN
+suppressPackageStartupMessages(require(sva)) # Combat
 
 # Functions -------------------------------------------------------------------
 #' collapseBatchVars
@@ -178,10 +182,6 @@ mnnBatchCorrect <- function(dataTab, batchTab = NULL, covarsTab = NULL,
   result
 }
 
-# Options ---------------------------------------------------------------------
-options(echo = T)
-args <- commandArgs(trailingOnly = T)
-
 # Default Parameters  ---------------------------------------------------------
 set.seed(42)
 # names of implemented methods
@@ -192,7 +192,9 @@ output_dir <- args[2]
 std_method_name <- args[3]
 input_matrix_dataset <- args[4]
 output_matrix_dataset <- args[5]
-batch_dataset <- args[6] # Vectorized!!!
+batch_dataset <- args[6]
+data.warnings <- NULL
+time_idle <- 0
 
 if (std_method_name == 'mnn') {
   mnn_k <- 20
