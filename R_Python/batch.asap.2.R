@@ -1,9 +1,3 @@
-# NOTES FOR VINCENT
-# 4) I consider factorial/character submitted variables as batch, and numeric 
-#    ones as covariates, which I regress out
-# 5) Limma can handle 2 batch (factorial) variables, ComBat and MNN can only 
-#    handle 1. Therefore, if more than 2 (or 1) batch variables were submitted,
-#    I just collapse them together
 # 6) MNN doesn't handle covariates, I issue a warning if they are submitted. 
 # 7) I put rather a lot of warnings (I used warning command), please check that
 # they are displayed properly
@@ -34,9 +28,10 @@ collapseBatchVars <- function(batchDF, colStart = 2) {
   result <- data.frame(batchDF)
   if (ncol(batchDF) > colStart) {
     msg <- paste("The method can't handle more than", colStart,
-                 "batch variables. Rest batch variables are assumed to be ", 
+                 "categorical variables. Remaining categorical variables are assumed to be ", 
                  "additive & collapsed")
     warning(msg)
+	data.warnings[[3]] <- list(name = msg, description = msg)
     result[, colStart] <- apply(result[, colStart:ncol(batchDF)], 1, paste, 
                                 collapse = ', ')
   }
@@ -55,8 +50,8 @@ collapseBatchVars <- function(batchDF, colStart = 2) {
 combatBatchCorrect <- function(dataTab, batchTab = NULL, covarsTab = NULL) {
   # correction with only covariates isn't possible
   if (is.null(batchTab) & !is.null(covarsTab)) {
-    msg <- paste("Combat requires at least one batch variable. Removal of",
-                 "only numeric batch effect (covariates) are not supported by",
+    msg <- paste("Combat requires at least one categorical variable. Removal of",
+                 "only numerical covariates are not supported by",
                  "Combat. Try using limma instead.")
     error.json(msg)
     result <- NULL
@@ -109,6 +104,7 @@ limmaBatchCorrect <- function(dataTab, batchTab = NULL, covarsTab = NULL) {
                    "was assumed to be the most important one and isn't",
                    "collapsed")
       warning(msg)
+	  data.warnings[[4]] <- list(name = msg, description = msg)
     }
     if (ncol(batchTab) > 1) {
       result <- removeBatchEffect(dataTab, batchTab[, 1], batchTab[, 2], 
@@ -141,43 +137,30 @@ limmaBatchCorrect <- function(dataTab, batchTab = NULL, covarsTab = NULL) {
 mnnBatchCorrect <- function(dataTab, batchTab = NULL, covarsTab = NULL, 
                             mnnK = 20, mnnSigma = 0.1) {
   # correction with only covariates isn't possible
-  if (is.null(batchTab) & !is.null(covarsTab)) {
-    msg <- paste("MNN requires at least one batch variable. Removal of only",
-                 "numeric batch effect (covariates) are not supported by MNN.",
-                 "Try using limma instead.")
-    error.json(msg)
-    result <- NULL
-  }
+  if (!is.null(covarsTab)) error.json("Removal of numerical covariates are not supported by MNN. Try using limma instead.")
+  if (is.null(batchTab)) error.json("MNN works only if you supply at least one categorical covariate!")
   
-  if (!is.null(batchTab)) {
-    if (!is.null(covarsTab)) {
-      msg <- paste("Removal of numeric batch effect (covariates) are not",
-                   "supported by MNN. Covariates are ignored. If it's",
-                   "important, try using limma instead")
-      warning(msg)
-    } 
-    
-    # Convert to vector / collapse as MNN can only handle one batch effect 
-    # variable. Additive effect is assumed.
-    if (ncol(batchTab) > 1) {
-      batchVect <- as.factor(collapseBatchVars(batchTab, 1)[, 1])
-    } else {
-      batchVect <- as.factor(batchTab[, 1])
-    }
-    
-    # MNN wants banch of matrices as input
-    batchMatrx <- lapply(levels(batchVect), 
-                         function(x) dataTab[, which(batchVect == x)])
-    batchMatrx <- lapply(batchMatrx, as.matrix)
-    result <- do.call(mnnCorrect, c(batchMatrx, 
-                                    list(k = mnnK, sigma = mnnSigma)))
-    result <- result$corrected
-    # recover column names
-    result <- do.call(cbind, result)
-    colnames(result) <- do.call(c, lapply(batchMatrx, colnames))
-    # recover order
-    result <- result[, colnames(dataTab)]
+  # Convert to vector / collapse as MNN can only handle one batch effect 
+  # variable. Additive effect is assumed.
+  if (ncol(batchTab) > 1) {
+	batchVect <- as.factor(collapseBatchVars(batchTab, 1)[, 1])
+  } else {
+    batchVect <- as.factor(batchTab[, 1])
   }
+
+  # MNN wants banch of matrices as input
+  batchMatrx <- lapply(levels(batchVect), function(x) dataTab[, which(batchVect == x)])
+  batchMatrx <- lapply(batchMatrx, as.matrix)
+  result <- do.call(mnnCorrect, c(batchMatrx, list(k = mnnK, sigma = mnnSigma)))
+  result <- result$corrected
+	
+  # recover column names
+  result <- do.call(cbind, result)
+  colnames(result) <- do.call(c, lapply(batchMatrx, colnames))
+
+  # recover order
+  result <- result[, colnames(dataTab)]
+
   rownames(result) <- rownames(dataTab)
   result
 }
@@ -201,12 +184,12 @@ if (std_method_name == 'mnn') {
   if (!is.na(args[7])) {
     mnn_k <- as.integer(args[7])
   } else {
-    warning("No k for MNN was submitted, using default one (20)")
+	data.warnings[[1]] <- list(name = "No k for MNN was submitted, using default one (20)", description = "No k for MNN was submitted, using default one (20)")
   }
   if (!is.na(args[8])) {
     mnn_sigma <- as.numeric(args[8])
   } else {
-    warning("No sigma for MNN was submitted, using default one (0.1)")
+    data.warnings[[2]] <- list(name = "No sigma for MNN was submitted, using default one (0.1)", description = "No sigma for MNN was submitted, using default one (0.1)")
   }
 }
 
@@ -223,8 +206,6 @@ if(is.null(batch_dataset) || is.na(batch_dataset) || batch_dataset == "" ||
   batch_dataset <- unique(strsplit(batch_dataset, split = ",")[[1]])
   message(length(batch_dataset), " covariates detected. Will add covariates to the model.")
 }
-
-data.warnings <- NULL
 
 # Read-in LOOM file -----------------------------------------------------------
 # Open the existing Loom in read-only mode and recuperate the infos 
@@ -308,6 +289,7 @@ close_all()
 
 # Generate default JSON file
 stats <- list()
-stats$nber_rows = ncol(data.out)
-stats$nber_cols = nrow(data.out)
+stats$nber_rows = nrow(data.out)
+stats$nber_cols = ncol(data.out)
+if(!is.null(data.warnings)) stats$warnings = list(data.warnings)
 write(jsonlite::toJSON(stats, method="C", auto_unbox=T, digits = NA), file = paste0(output_dir, "/output.json"), append=F)
