@@ -16,6 +16,7 @@ import bigarrays.StringArray64;
 import compression.CompressionHandler;
 import hdf5.HDF5Tools;
 import hdf5.h510x.H510xHandler;
+import hdf5.h5ad.H5ADHandler;
 import hdf5.loom.LoomFile;
 import hdf5.loom.LoomHandler;
 import json.ErrorJSON;
@@ -72,6 +73,7 @@ public class FileParser
     {
     	HDF5Tools.checkIfHDF5orLoom(); // Check if it is an HDF5 archive
     	if(Parameters.fileType == FileType.H5_10x) H510xHandler.preparse();
+    	else if(Parameters.fileType == FileType.H5AD) H5ADHandler.preparse();
     	else if(Parameters.fileType == FileType.LOOM) LoomHandler.preparse();
     	else // It's a text file, or an archive
     	{

@@ -8,6 +8,7 @@ import bigarrays.StringArray64;
 import ch.systemsx.cisd.hdf5.HDF5Factory;
 import ch.systemsx.cisd.hdf5.IHDF5Reader;
 import hdf.hdf5lib.exceptions.HDF5JavaException;
+import hdf5.ProgressiveReader;
 import hdf5.loom.LoomFile;
 import json.ErrorJSON;
 import json.ParsingJSON;

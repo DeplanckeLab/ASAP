@@ -33,6 +33,7 @@ public class Parameters
 	public static long nGenes = -1;
 	public static long[] indexes = null;
 	public static long[] stable_ids = null;
+	public static String loom_cell_stable_ids = null;
 	public static String[] names = null;
 	public static String metaName = null;
 	public static MetaOn which = null;
@@ -385,6 +386,7 @@ public class Parameters
 						i++;
 						loomFile = args[i];
 						loomFile = loomFile.replaceAll("\\\\", "/");
+						if(new File(loomFile).isDirectory()) new ErrorJSON("'-loom' should be followed by a Loom file name, not a folder name.");
 						break;
 					case "-iAnnot":
 						i++;
@@ -437,6 +439,13 @@ public class Parameters
 						{
 							new ErrorJSON("The '-stable_ids' option should be followed by positive Long value(s). You entered " + args[i]);
 						}
+						break;
+					case "-loom_cells":
+						i++;
+						if(args[i].equals("")) new ErrorJSON("The -loom_cells option should be followed by String(s).");
+						loom_cell_stable_ids = args[i];
+						loom_cell_stable_ids = loom_cell_stable_ids.replaceAll("\\\\", "/");
+						if(new File(loom_cell_stable_ids).isDirectory()) new ErrorJSON("'-loom_cell_stable_ids' should be followed by a Loom file name, not a folder name.");
 						break;
 					case "-names":
 						i++;
@@ -1919,6 +1928,7 @@ public class Parameters
 				System.out.println("-loom %s \t[Required] Loom file to read.");
 				System.out.println("-iAnnot %s \t\tInput dataset e.g. '/matrix' (default)");
 				System.out.println("-stable_ids %s \t[One is required] Stable_id(s) of the row to read (separated by comma if multiple)");
+				System.out.println("-loom_cells %s \t[Optional] Loom file of the columns/cells to export");
 				System.out.println("-indexes %s \t[One is required] Index(es) of the row to read (separated by comma if multiple)");
 				System.out.println("-names %s \t[One is required] Name(s) of the gene to extract (separated by comma if multiple)");
 				System.out.println("-display-names %s \t[Optional] For adding the name(s) of the cell/genes extracted in the output JSON");

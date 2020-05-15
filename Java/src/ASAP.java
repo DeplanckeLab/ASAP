@@ -80,15 +80,28 @@ public class ASAP
 			case ParseMetadata: 
 				FileParser.parseMetadata();
 				break;
-			case ExtractRow: 
+			case ExtractRow:
+				// Cells to extract values from
+				LongArray64 cellStableIds = null;		
+				if(Parameters.loom_cell_stable_ids != null) {
+					LoomFile loom = new LoomFile("r", Parameters.loom_cell_stable_ids);
+					if(!loom.exists("/col_attrs/_StableID")) new ErrorJSON("No StableID in this Loom file: " + Parameters.loom_cell_stable_ids);
+					cellStableIds = loom.readLongArray("/col_attrs/_StableID");
+					loom.close();
+				}
+								
+				// Reading Loom with data to extract
 				LoomFile loom = new LoomFile("r", Parameters.loomFile);
-
+				LongArray64 cell_indexes = null; // Limit to these cells
+				if(cellStableIds != null) cell_indexes = loom.getCellIndexesByStableIds(cellStableIds);
+				
 				// First check the total dimension of the dataset to extract from
 				long[] dim = loom.getDimensions("/matrix");
 				long nbGenes = dim[0];
 				long nbCells = dim[1];
 				dim = loom.getDimensions(Parameters.iAnnot); // dim[1] = nb of values to extract for each row
 				if(dim.length == 1) { loom.close(); new ErrorJSON("The dataset is not a matrix, it's an array. You should use ExtractMetaData instead"); }
+				if(dim[1] == nbGenes && cellStableIds != null) { loom.close(); new ErrorJSON("You cannot request this dataset and specify -loom_cells"); }
 				StringArray64 names = null;
 				
 				// Retrieve names if asked
@@ -132,10 +145,23 @@ public class ASAP
 						{
 							sb.append("[");
 							String prefix2 = "";
-							for(int i = 0; i < matrix[(int)index].length; i++)
+							if(cell_indexes != null) 
 							{
-								sb.append(prefix2).append(Utils.format(matrix[(int)index][i])); // TODO does not work if too big array
-								prefix2 = ",";
+								for(long ci = 0; ci < cell_indexes.size(); ci++)
+								{
+									long cellI = cell_indexes.get(ci);
+									if(cellI == -1) sb.append(prefix2).append("null");
+									else sb.append(prefix2).append(Utils.format(matrix[(int)index][(int)cellI])); // TODO does not work if too big array
+									prefix2 = ",";
+								}
+							}
+							else 
+							{
+								for(int i = 0; i < matrix[(int)index].length; i++)
+								{
+									sb.append(prefix2).append(Utils.format(matrix[(int)index][i])); // TODO does not work if too big array
+									prefix2 = ",";
+								}
 							}
 							sb.append("]");
 						}
@@ -153,10 +179,24 @@ public class ASAP
 							sb.append("[");
 							float[] row = loom.readRow(index, Parameters.iAnnot); // TODO does not work if too big array // TODO handle multiple read in same block
 							String prefix2 = "";
-							for(int i = 0; i < row.length; i++)
+							
+							if(cell_indexes != null) 
 							{
-								sb.append(prefix2).append(Utils.format(row[i]));
-								prefix2 = ",";
+								for(long ci = 0; ci < cell_indexes.size(); ci++)
+								{
+									long cellI = cell_indexes.get(ci);
+									if(cellI == -1) sb.append(prefix2).append("null");
+									else sb.append(prefix2).append(Utils.format(row[(int)cellI])); // TODO does not work if too big array
+									prefix2 = ",";
+								}
+							}
+							else 
+							{
+								for(int i = 0; i < row.length; i++)
+								{
+									sb.append(prefix2).append(Utils.format(row[i]));
+									prefix2 = ",";
+								}
 							}
 							sb.append("]");
 						}
@@ -171,10 +211,23 @@ public class ASAP
 				{
 					sb.append(",\"names\":[");
 					prefix = "";
-					for(String n:names)
+					if(cell_indexes != null) 
 					{
-						sb.append(prefix).append("\"").append(n).append("\"");
-						prefix = ",";
+						for(long ci = 0; ci < cell_indexes.size(); ci++)
+						{
+							long cellI = cell_indexes.get(ci);
+							if(cellI == -1) sb.append(prefix).append("null");
+							else sb.append(prefix).append("\"").append(names.get(cellI)).append("\""); // TODO does not work if too big array
+							prefix = ",";
+						}
+					}
+					else 
+					{
+						for(String n:names)
+						{
+							sb.append(prefix).append("\"").append(n).append("\"");
+							prefix = ",";
+						}
 					}
 					sb.append("]");
 				}

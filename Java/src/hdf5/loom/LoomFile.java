@@ -35,11 +35,13 @@ import tools.Utils;
 public class LoomFile 
 {
 	private IHDF5Reader handle = null;
+	private String loomPath = null;
 	
 	public boolean readOnly = false;
 
 	public LoomFile(String type, String filename) 
 	{
+		loomPath = filename;
 		if(type.equals("w")) // Always create new
 		{
 			createEmptyLoomFile(filename);
@@ -113,6 +115,11 @@ public class LoomFile
 		}
 		else new ErrorJSON("Unknown type: " + type);
 		
+	}
+	
+	public String getLoomPath()
+	{
+		return loomPath;
 	}
 	
 	public void checkLoomFormat() // Following http://linnarssonlab.org/loompy/format/index.html#specification
@@ -695,10 +702,38 @@ public class LoomFile
 					if(found == stable_ids.length) break;
 				}
 			}
-		}
+		} else new ErrorJSON("No StableID in this Loom file: " + this.loomPath);
 		// Prepare output res
 		long[] res = new long[stable_ids.length];
 		for (int i = 0; i < stable_ids.length; i++) res[i] = tmp.get(stable_ids[i]);
+		
+		return res;
+	}
+	
+	public LongArray64 getCellIndexesByStableIds(LongArray64 stable_ids)
+	{
+		int found = 0;
+		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
+		HashMap<Long, Long> tmp = new HashMap<>(); // I'm afraid this could be enormous?
+		for(long sid = 0; sid < stable_ids.size(); sid ++) tmp.put(stable_ids.get(sid), -1l);
+			
+		if(this.handle.object().isDataSet("/col_attrs/_StableID"))
+		{
+			LongArray64 cells = this.readLongArray("/col_attrs/_StableID");
+			for(long i = 0; i < cells.size(); i++) 
+			{
+				long c = cells.get(i);
+				if(tmp.containsKey(c)) 
+				{
+					tmp.put(c, i);
+					found++;
+					if(found == stable_ids.size()) break;
+				}
+			}
+		} else new ErrorJSON("No StableID in this Loom file: " + this.loomPath);
+		// Prepare output res
+		LongArray64 res = new LongArray64(stable_ids.size());
+		for (int i = 0; i < stable_ids.size(); i++) res.set(i, tmp.get(stable_ids.get(i)));
 		
 		return res;
 	}
@@ -1703,6 +1738,7 @@ public class LoomFile
     	
     	// Create Metadata array
     	data.meta = new ArrayList<>();
+    	data.meta.add(new Metadata("/attrs/LOOM_SPEC_VERSION", Metatype.STRING, MetaOn.GLOBAL, 1, 1)); // Loom v3
     	
         // Cell annotations
     	loom.writeStringArray("/col_attrs/CellID", data.cell_names);
