@@ -74,6 +74,13 @@ public class StringArray64 implements Iterable<String>
         data[chunk] = b;
     }
 
+    public StringArray64 copy()
+    {
+    	StringArray64 copy = new StringArray64(this.size);
+    	for(long index = 0; index < this.size; index++) copy.set(index, this.get(index));
+    	return copy;
+    }
+    
     public long size() 
     {
         return this.size;

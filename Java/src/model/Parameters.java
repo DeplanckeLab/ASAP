@@ -1,6 +1,7 @@
 package model;
 
 import java.io.File;
+import java.util.ArrayList;
 
 import config.Config;
 import db.DBManager;
@@ -11,14 +12,18 @@ import tools.Utils;
 
 public class Parameters 
 {
+	public static enum OutputType{JSON, PLAIN_TEXT};
+	
 	// Chunking
 	public static final int defaultChunkX = 64;
 	public static final int defaultChunkY = 64;
 	
 	// Shared
+	public static boolean scientific = false;
 	public static String organism_S = null;
 	public static String outputFolder = null;
 	public static String outputFile = null;
+	public static OutputType outputType = OutputType.JSON;
 	public static String group = null;
 	public static String fileName = null;
 	public static String selection = null;
@@ -33,22 +38,36 @@ public class Parameters
 	public static long nGenes = -1;
 	public static long[] indexes = null;
 	public static long[] stable_ids = null;
+	public static boolean export_stable_ids = false;
 	public static String loom_cell_stable_ids = null;
 	public static String[] names = null;
 	public static String metaName = null;
 	public static MetaOn which = null;
 	public static Metatype metatype = null;
+	public static Metatype[] metatypes = null;
 	public static boolean displayValues = true;
 	public static boolean displayNames = false;
+	public static boolean displayRowNames = false;
+	public static boolean displayColNames = false;
 	public static String loomFile = null;
 	public static String loomFile2 = null;
 	public static double idleTime = 0;
 	public static boolean isIndex = false;
+	public static boolean removeAmbiguous = false;
 	public static String value = null;
+	public static boolean sort = false;
+	public static String defaultMissingValue = "-1";
+	public static long randomSeed = 42;
+	
+	// Module score
+	// Seurat
+	public static int nBins = 24;
+	public static int nBackgroundGenes = 100;
 	
 	// Dimension Reduction
 	public static dim_reduction.model.Model dimReducModel = null;
-	// TSNE
+	
+	// t-SNE
 	public static int perplexity = -1;
 	
 	// DE
@@ -87,6 +106,10 @@ public class Parameters
 	public static float fcThreshold = 0;
 	public static int topThreshold = Integer.MAX_VALUE;
 	
+	// ModuleScore
+	public static module_score.model.Model moduleScoreModel = module_score.model.Model.Seurat;
+	public static String metaForComputation = null;
+	
 	// Parsing
 	public static boolean has_header = false;
 	public static ColumnName name_column = ColumnName.NONE;
@@ -113,6 +136,9 @@ public class Parameters
 			case Enrichment:
 				loadEnrichment(args);
 				break;
+			case ModuleScore:
+				loadModuleScore(args);
+				break;
 			case Preparsing: 
 				loadPreparsing(args);
 				break;
@@ -128,7 +154,7 @@ public class Parameters
 			case CreateCellSelection:
 				loadCreateCellSelection(args);
 				break;
-			case FilterGenes: 
+			case FilterRows: 
 				loadFilterGenes(args);
 				break;
 			case DimensionReduction: 
@@ -152,10 +178,13 @@ public class Parameters
 			case ExtractCol:
 				loadExtractCol(args);
 				break;
-			case ListMetaData:
+			case ExtractDataset:
+				loadExtractDataset(args);
+				break;
+			case ListMetadata:
 				loadListMetadata(args);
 				break;
-			case ExtractMetaData:
+			case ExtractMetadata:
 				loadExtractMetadata(args);
 				break;
 			case MatchValues:
@@ -167,7 +196,7 @@ public class Parameters
 			case CopyMetaData:
 				loadCopyMetadata(args);
 				break;
-			case FilterCells:
+			case FilterCols:
 				loadFilterCells(args);
 				break;
 			case FilterDEMetadata:
@@ -279,6 +308,127 @@ public class Parameters
 		if(fileName == null) new ErrorJSON("No JSON file containing the list of genes to enrich, please choose one by using the '-f' option.");
 	}
 	
+	public static void loadModuleScore(String[] args)
+	{
+		for(int i = 0; i < args.length; i++) 
+		{
+			String arg = args[i];
+			if(arg.startsWith("-"))
+			{
+				switch(arg)
+				{
+					case "-m":
+						i++;
+						switch(args[i])
+						{
+						case "seurat":
+							moduleScoreModel = module_score.model.Model.Seurat;
+							break;
+						case "pca":
+							moduleScoreModel = module_score.model.Model.PCA;
+							break;
+						default:
+							new ErrorJSON("The entered model, "+args[i]+ ", does not exist!\nIt should be one of the following: [seurat, pca]");
+						}
+						break;						
+					case "-o":
+						i++;
+						JSONFileName = args[i];
+						JSONFileName = JSONFileName.replaceAll("\\\\", "/");
+						if(new File(JSONFileName).isDirectory()) new ErrorJSON("'-o' should be followed by a JSON file name, not a folder name.");
+						break;
+					case "-oAnnot":
+						i++;
+						oAnnot = args[i];
+						if(!oAnnot.startsWith("/")) oAnnot = "/" + oAnnot;
+						break;
+					case "-seed":
+						i++;
+						try
+						{
+							randomSeed = Long.parseLong(args[i]);
+						}
+						catch(NumberFormatException nfe)
+						{
+							new ErrorJSON("The '-seed' option should be followed by a Long. You entered " + args[i]);
+						}
+						break;
+					case "-nBackgroundGenes":
+						i++;
+						try
+						{
+							nBackgroundGenes = Integer.parseInt(args[i]);
+						}
+						catch(NumberFormatException nfe)
+						{
+							new ErrorJSON("The '-nBackgroundGenes' option should be followed by an Integer. You entered " + args[i]);
+						}
+						break;
+					case "-nBins":
+						i++;
+						try
+						{
+							nBins = Integer.parseInt(args[i]);
+						}
+						catch(NumberFormatException nfe)
+						{
+							new ErrorJSON("The '-nBins' option should be followed by an Integer. You entered " + args[i]);
+						}
+						break;
+					case "-loom":
+						i++;
+						try
+						{
+							loomFile = args[i].replaceAll("\\\\", "/");
+							File c = new File(loomFile);
+							if(!c.exists()) new ErrorJSON("No file at path " + loomFile);
+							if(!c.isFile()) new ErrorJSON(loomFile + " is not a file");
+						}
+						catch(Exception e)
+						{
+							new ErrorJSON("The '-loom' option should be followed by Loom file path. " + e.getMessage() + ". You entered " + args[i]);
+						}
+						break;
+					case "-geneset":
+						i++;
+						try
+						{
+							geneset_id = Integer.parseInt(args[i]);
+						}
+						catch(NumberFormatException nfe)
+						{
+							new ErrorJSON("The '-geneset' option should be followed by an Integer. You entered " + args[i]);
+						}
+						break;
+					case "-dataset":
+						i++;
+						metaForComputation = args[i];
+						break;
+					case "-metadata":
+						i++;
+						metaName = args[i];
+						break;
+					case "-sel":
+						i++;
+						selection = args[i];
+						break;
+					case "-h":
+						i++;
+						DBManager.URL = "jdbc:postgresql://" + args[i] + "?user=" + Config.getProperty("mDbUser") + "&password=" + Config.getProperty("mDbPwds");
+						break;
+					default:
+						System.err.println("Unused argument: " + arg);
+				}
+			}
+		}
+		if(loomFile == null) new ErrorJSON("No Loom file is specified, please choose one by using the '-loom' option.");
+		if(geneset_id == -1 && metaName == null) new ErrorJSON("No geneset is specified, please choose one by using the '-geneset' or '-metadata' option.");
+		if(geneset_id != -1 && metaName != null) new ErrorJSON("You specified both '-geneset' AND '-metadata' options, pick only ONE");
+		if(selection != null && metaName == null) new ErrorJSON("You specified a selection with '-sel' BUT '-metadata' IS NOT SET");
+		if(selection == null && metaName != null) new ErrorJSON("You specified a '-metadata' BUT selection with '-sel' IS NOT SET");
+		if(metaForComputation == null) new ErrorJSON("You should specify a dataset to use for computing the score, using '-dataset'");
+	}
+
 	public static void loadUpdateEnsemblDB(String[] args)
 	{
 		for(int i = 0; i < args.length; i++) 
@@ -404,6 +554,9 @@ public class Parameters
 							new ErrorJSON("The '-prec' option should be followed by an Integer. You entered " + args[i]);
 						}
 						break;
+					case "--sort":
+						sort = true;
+						break;
 					case "-indexes":
 						i++;
 						if(args[i].equals("")) new ErrorJSON("The -indexes option should be followed by String(s).");
@@ -464,7 +617,7 @@ public class Parameters
 		if(loomFile == null)
 		{
 			printHelp(Mode.ExtractRow);
-			System.exit(-1);
+			new ErrorJSON("Loom file parameter is missing");
 		}
 		if(iAnnot == null) iAnnot = "/matrix";
 		if(indexes == null && names == null && stable_ids == null) new ErrorJSON("You need to use at least one of the following options -names, -indexes or -stable_ids");
@@ -536,6 +689,9 @@ public class Parameters
 					case "-display-names":
 						displayNames = true;
 						break;
+					case "-display-stable-ids":
+						export_stable_ids = true;
+						break;
 					default:
 						System.err.println("Unused argument: " + arg);
 				}
@@ -549,6 +705,119 @@ public class Parameters
 		if(iAnnot == null) iAnnot = "/matrix";
 		if(indexes == null && names == null) new ErrorJSON("You need to use at least one of the two options -names or -indexes");
 		if(indexes != null && names != null) new ErrorJSON("You need to use only one of the two options -names or -indexes, not both");
+	}
+	
+	public static void loadExtractDataset(String[] args)
+	{
+		for(int i = 0; i < args.length; i++) 
+		{
+			String arg = args[i];
+			if(arg.startsWith("-"))
+			{
+				switch(arg)
+				{
+					case "-o":
+					case "--output-file":
+						i++;
+						outputFile = args[i];
+						outputFile = outputFile.replaceAll("\\\\", "/");
+						if(new File(outputFile).isDirectory()) new ErrorJSON("'-o' | '--output-file' should be followed by a file name, not a folder name.");
+						break;
+					case "-t":
+					case "--output-type":
+						i++;
+						try
+						{
+							outputType = OutputType.valueOf(args[i]);
+						}
+						catch(IllegalArgumentException iae)
+						{
+							new ErrorJSON("This output type '" + args[i] + "' does not exist. Please select in [JSON, PLAIN_TEXT]");
+						}
+						break;
+					case "--loom":
+						i++;
+						loomFile = args[i];
+						loomFile = loomFile.replaceAll("\\\\", "/");
+						if(new File(loomFile).isDirectory()) new ErrorJSON("'--loom' should be followed by a Loom file name, not a folder name.");
+						break;
+					case "--iAnnot":
+						i++;
+						iAnnot = args[i];
+						if(!iAnnot.startsWith("/")) iAnnot = "/" + iAnnot;
+						break;
+					case "--prec":
+						i++;
+						try
+						{
+							Utils.changeFormatter(Integer.parseInt(args[i]));
+						}
+						catch(NumberFormatException nfe)
+						{
+							new ErrorJSON("The '-prec' option should be followed by an Integer. You entered " + args[i]);
+						}
+						break;
+					case "--row-names":
+						displayRowNames = true;
+						break;
+					case "--col-names":
+						displayColNames = true;
+						break;
+					case "--col-indexes":
+						i++;
+						if(args[i].equals("")) new ErrorJSON("The --col-indexes option should be followed by String(s).");
+						try
+						{
+							String[] tokens = args[i].split(",");
+							indexes = new long[tokens.length];
+							for(int k = 0; k < tokens.length; k++) 
+							{
+								indexes[k] = Long.parseLong(tokens[k]);
+								if(indexes[k] < 0) new ErrorJSON("The '--col-indexes' option should be followed by positive Long value(s). You entered " + indexes[k]);
+							}
+						}
+						catch(NumberFormatException nfe)
+						{
+							new ErrorJSON("The '--col-indexes' option should be followed by positive Long value(s). You entered " + args[i]);
+						}
+						break;
+					case "--col-stableids":
+						i++;
+						if(args[i].equals("")) new ErrorJSON("The --col-stableids option should be followed by String(s).");
+						try
+						{
+							String[] tokens = args[i].split(",");
+							stable_ids = new long[tokens.length];
+							for(int k = 0; k < tokens.length; k++) 
+							{
+								stable_ids[k] = Long.parseLong(tokens[k]);
+								if(stable_ids[k] < 0) new ErrorJSON("The '--col-stableids' option should be followed by positive Long value(s). You entered " + stable_ids[k]);
+							}
+						}
+						catch(NumberFormatException nfe)
+						{
+							new ErrorJSON("The '--col-stableids' option should be followed by positive Long value(s). You entered " + args[i]);
+						}
+						break;
+					case "--loom-cells":
+						i++;
+						if(args[i].equals("")) new ErrorJSON("The --loom-cells option should be followed by String(s).");
+						loom_cell_stable_ids = args[i];
+						loom_cell_stable_ids = loom_cell_stable_ids.replaceAll("\\\\", "/");
+						if(new File(loom_cell_stable_ids).isDirectory()) new ErrorJSON("'--loom-cells' should be followed by a Loom file name, not a folder name.");
+						break;
+					default:
+						System.err.println("Unused argument: " + arg);
+				}
+			}
+		}
+		if(loomFile == null)
+		{
+			printHelp(Mode.ExtractDataset);
+			new ErrorJSON("Loom file parameter is missing", outputFile);
+		}
+		if(iAnnot == null) iAnnot = "/matrix";
+		if(loom_cell_stable_ids == null) loom_cell_stable_ids = loomFile;
 	}
 	
 	public static void loadListMetadata(String[] args)
@@ -578,13 +847,14 @@ public class Parameters
 		}
 		if(fileName == null)
 		{
-			printHelp(Mode.ListMetaData);
+			printHelp(Mode.ListMetadata);
 			System.exit(-1);
 		}
 	}
 	
 	public static void loadExtractMetadata(String[] args)
 	{
+		int precision = 3; // default
 		for(int i = 0; i < args.length; i++) 
 		{
 			String arg = args[i];
@@ -629,7 +899,7 @@ public class Parameters
 						i++;
 						try
 						{
-							Utils.changeFormatter(Integer.parseInt(args[i]));
+							precision = Integer.parseInt(args[i]);
 						}
 						catch(NumberFormatException nfe)
 						{
@@ -639,6 +909,9 @@ public class Parameters
 					case "-no-values":
 						displayValues = false;
 						break;
+					case "--scientific":
+						scientific = true;
+						break;
 					case "-names":
 						displayNames = true;
 						break;
@@ -647,6 +920,7 @@ public class Parameters
 				}
 			}
 		}
+		Utils.changeFormatter(precision);
 		if(loomFile == null) new ErrorJSON("Please specify a loom file to extract metadata from using -loom option");
 		if(metaName == null && JSONFileName == null) new ErrorJSON("Please specify metadata(s) using -meta or -metaJSON option");
 		if(metaName != null && JSONFileName != null) new ErrorJSON("Please specify metadata(s) using -meta OR -metaJSON option. You specified both.");
@@ -765,16 +1039,9 @@ public class Parameters
 				{
 					case "-o":
 						i++;
-						outputFolder = args[i];
-						outputFolder = outputFolder.replaceAll("\\\\", "/");
-						File f = new File(outputFolder);
-						if(!f.exists()) 
-						{
-							System.out.println("Output folder does not exist. Creating it");
-							f.mkdirs();
-						}
-						else if(!f.isDirectory()) new ErrorJSON(outputFolder + " is not a folder.");
-						if(!outputFolder.endsWith("/")) outputFolder+= "/";
+						outputFile = args[i];
+						outputFile = outputFile.replaceAll("\\\\", "/");
+						if(new File(outputFile).isDirectory()) new ErrorJSON("'-o' should be followed by a JSON file name, not a folder name.");
 						break;
 					case "-loom":
 						i++;
@@ -790,6 +1057,13 @@ public class Parameters
 							new ErrorJSON("The '-loom' option should be followed by Loom file path. " + e.getMessage() + ". You entered " + args[i]);
 						}
 						break;
+					case "-metaJSON":
+						i++;
+						JSONFileName = args[i];
+						JSONFileName = JSONFileName.replaceAll("\\\\", "/");
+						if(new File(JSONFileName).isDirectory()) new ErrorJSON("'-metaJSON' should be followed by a JSON file containing metadata path in the Loom. Here it is a folder name!");
+						if(!new File(JSONFileName).exists()) new ErrorJSON("'-metaJSON' should be followed by a JSON file containing metadata path in the Loom. Here, the file does not exist!");
+						break;
 					case "-meta":
 						i++;
 						metaName = args[i];
@@ -799,20 +1073,15 @@ public class Parameters
 				}
 			}
 		}
-		if(outputFolder == null)
-		{
-			printHelp(Mode.RemoveMetaData);
-			new ErrorJSON("Please specify an output folder using -o option");
-		}
 		if(loomFile == null)
 		{
 			printHelp(Mode.RemoveMetaData);
 			new ErrorJSON("Please specify a loom file using -loom option");
 		}
-		if(metaName == null)
+		if(metaName == null && JSONFileName == null)
 		{
 			printHelp(Mode.RemoveMetaData);
-			new ErrorJSON("Please specify a dataset using -meta option");
+			new ErrorJSON("Please specify a metadata using -meta or -metaJSON option");
 		}
 	}
 	
@@ -932,17 +1201,17 @@ public class Parameters
 		}
 		if(outputFolder == null)
 		{
-			printHelp(Mode.FilterCells);
+			printHelp(Mode.FilterCols);
 			new ErrorJSON("Please specify an output folder using -o option");
 		}
 		if(loomFile == null)
 		{
-			printHelp(Mode.FilterCells);
+			printHelp(Mode.FilterCols);
 			new ErrorJSON("Please specify a loom file to filter using -loom option");
 		}
 		if(JSONFileName == null)
 		{
-			printHelp(Mode.FilterCells);
+			printHelp(Mode.FilterCols);
 			new ErrorJSON("Please specify a JSON file containing Cells to filter out using -col_names_file option");
 		}
 	}
@@ -988,7 +1257,7 @@ public class Parameters
 						i++;
 						try
 						{
-							pThreshold = Float.parseFloat(args[i]);
+							pThreshold = Float.parseFloat(args[i].replaceAll(",", "."));
 							if(pThreshold < 0 || pThreshold > 1) new ErrorJSON("The '-p' option should be followed by a float in [0,1]. You entered " + args[i]);
 						}
 						catch(NumberFormatException nfe)
@@ -1000,7 +1269,7 @@ public class Parameters
 						i++;
 						try
 						{
-							fdrThreshold = Float.parseFloat(args[i]);
+							fdrThreshold = Float.parseFloat(args[i].replaceAll(",", "."));
 							if(fdrThreshold < 0 || fdrThreshold > 1) new ErrorJSON("The '-fdr' option should be followed by a float in [0,1]. You entered " + args[i]);
 						}
 						catch(NumberFormatException nfe)
@@ -1012,7 +1281,7 @@ public class Parameters
 						i++;
 						try
 						{
-							fcThreshold = Float.parseFloat(args[i]);
+							fcThreshold = Float.parseFloat(args[i].replaceAll(",", "."));
 							if(fcThreshold < 0 ) new ErrorJSON("The '-fc' option should be followed by a POSITIVE Float. You entered " + args[i]);
 						}
 						catch(NumberFormatException nfe)
@@ -1199,11 +1468,8 @@ public class Parameters
 				}
 			}
 		}
-		if(outputFolder == null || fileName == null)
-		{
-			printHelp(Mode.Parsing);
-			System.exit(-1);
-		}
+		if(outputFolder == null) new ErrorJSON("-o is mandatory option for parsing.");
+		if(fileName == null) new ErrorJSON("-f is mandatory option for parsing.");
 		if(nCells == -1) new ErrorJSON("-ncells is mandatory option for parsing.");
 		if(nGenes == -1) new ErrorJSON("-ngenes is mandatory option for parsing.");
 		if(fileType == null) new ErrorJSON("-type is mandatory option for parsing.");
@@ -1226,16 +1492,9 @@ public class Parameters
 				{
 					case "-o":
 						i++;
-						outputFolder = args[i];
-						outputFolder = outputFolder.replaceAll("\\\\", "/");
-						File f = new File(outputFolder);
-						if(!f.exists()) 
-						{
-							System.out.println("Output folder does not exist. Creating it");
-							f.mkdirs();
-						}
-						else if(!f.isDirectory()) new ErrorJSON(outputFolder + " is not a folder.");
-						if(!outputFolder.endsWith("/")) outputFolder+= "/";
+						JSONFileName = args[i];
+						JSONFileName = JSONFileName.replaceAll("\\\\", "/");
+						if(new File(JSONFileName).isDirectory()) new ErrorJSON("'-o' should be followed by a JSON file name, not a folder name.");
 						break;
 					case "-loom":
 						i++;
@@ -1300,16 +1559,56 @@ public class Parameters
 						selection = args[i];
 						selection = selection.replaceAll("\\\\", "/");
 						break;
+					case "-which":
+						i++;
+						switch(args[i].toLowerCase())
+						{
+							case "gene":
+								Parameters.which = MetaOn.GENE;
+								break;
+							case "cell":
+								Parameters.which = MetaOn.CELL;
+								break;
+							default:
+								new ErrorJSON(args[i] + " is incompatible with the 'which' option. Please choose between [cell, gene].");
+						}
+						break;
+					case "-metadataType":
+						i++;
+						String[] mTypes = args[i].split(",");
+						try
+						{
+							ArrayList<Metatype> mT = new ArrayList<Metatype>();
+							for(String m:mTypes)
+							{
+								m = m.trim();
+								if(!m.equals("")) mT.add(Metatype.valueOf(m));
+							}
+							metatypes = new Metatype[mT.size()];
+							for(int k = 0; k < metatypes.length; k++) metatypes[k] = mT.get(k);
+						}
+						catch(IllegalArgumentException iae)
+						{
+							new ErrorJSON("Unknown metadata type in '" + args[i] + "'");
+						}
+						break;
+					case "-removeAmbiguous":
+						removeAmbiguous = true;
+						break;
 					default:
 						System.err.println("Unused argument: " + arg);
 				}
 			}
 		}
-		if(outputFolder == null || loomFile == null || fileName == null)
-		{
-			printHelp(Mode.Parsing);
-			System.exit(-1);
-		}
+		//if(removeAmbiguous) System.out.println("You chose to remove ambiguous genes.");
+		//if(which != null) System.out.println("You specified that the metadata was applied on " + which);
+		//else 
+		//{
+		//	System.out.println("You DID NOT specify if the metadata was applied on [cell,gene] using the -which option. Set default to CELL.");
+		//	which = MetaOn.CELL;
+		//}
+		if(fileName == null) new ErrorJSON("Please specify a metadata file to preparse with '-f'");
+		if(loomFile == null) new ErrorJSON("Please specify a Loom file to which adding metadata with '-loom'");
 		if(fileType == null) new ErrorJSON("-type is mandatory option for metadata parsing.");
 		if(fileType == FileType.H5_10x || fileType == FileType.LOOM) new ErrorJSON("Cannot extract metadata from these files atm.");
 	}
@@ -1394,10 +1693,9 @@ public class Parameters
 				{
 					case "-o":
 						i++;
-						outputFolder = args[i];
-						outputFolder = outputFolder.replaceAll("\\\\", "/");
-						if(!outputFolder.endsWith("/")) outputFolder+= "/";
-						new File(outputFolder).mkdirs();
+						JSONFileName = args[i];
+						JSONFileName = JSONFileName.replaceAll("\\\\", "/");
+						if(new File(JSONFileName).isDirectory()) new ErrorJSON("'-o' should be followed by a JSON file name, not a folder name.");
 						break;
 					case "-loom":
 						i++;
@@ -1461,13 +1759,12 @@ public class Parameters
 				}
 			}
 		}
-		if(which != null) System.out.println("You specified that the metadata was applied on " + which);
-		else 
-		{
-			System.out.println("You DID NOT specify if the metadata was applied on [cell,gene] using the -which option. Set default to CELL.");
-			which = MetaOn.CELL;
-		}
-		if(outputFolder == null) new ErrorJSON("The output folder '-o' is mandatory for PreparseMetadata.");
+		//if(which != null) System.out.println("You specified that the metadata was applied on " + which);
+		//else 
+		//{
+		//	System.out.println("You DID NOT specify if the metadata was applied on [cell,gene] using the -which option. Set default to CELL.");
+		//	which = MetaOn.CELL;
+		//}
 		if(fileName == null) new ErrorJSON("Please specify a metadata file to preparse with '-f'");
 		if(loomFile == null) new ErrorJSON("Please specify a Loom file to which adding metadata with '-loom'");
 	}
@@ -1550,7 +1847,7 @@ public class Parameters
 		}
 		if(filtModel== null || outputFolder == null || loomFile == null)
 		{
-			printHelp(Mode.FilterGenes);
+			printHelp(Mode.FilterRows);
 			String error = "Filtering cannot be run because parameters are missing:\n";
 			if(filtModel == null) error += "No model is specified, please choose a model by using the '-m' option.\n";
 			if(loomFile == null) error += "No file is specified, please choose a data file by using the '-f' option.\n";
@@ -1559,7 +1856,7 @@ public class Parameters
 		}
 		if(filtModel == filtering.model.Model.KEEP && JSONFileName == null)
 		{
-			printHelp(Mode.FilterGenes);
+			printHelp(Mode.FilterRows);
 			new ErrorJSON("Please specify a JSON file containing Cells to filter out after filtering using -row_names_file option");
 		}
 		if(filtModel == filtering.model.Model.CPM && (nbCountsPerCell == -1 || nbCellsDetected == -1))
@@ -1868,6 +2165,22 @@ public class Parameters
 				System.out.println("-adj %s \tStatitical adjustment method for multiple comparision [bonferroni, fdr, or none, default = fdr].");
 				System.out.println("-min %i \tMinimum number of genes in a pathway for being taken into consideration [default = 15].");
 				System.out.println("-max %i \tMaximum number of genes in a pathway for being taken into consideration [default = 500].");
+				System.out.println("-h %s \t\tTo change specific host (default is " + Config.getProperty("mDbHost") + ")");
+				break;
+			case ModuleScore: 
+				System.out.println("ModuleScore Mode\n\nOptions:");
+				System.out.println("-m %s \t\tChoose a model amongst [seurat, pca] (default = seurat)");
+				System.out.println("-o %s \t\t[Optional] Output JSON file.");
+				System.out.println("-loom %s \t[Required] Loom file to compute the module score on.");
+				System.out.println("-geneset %i \t[Required, or -metadata]Id of the gene set (in the DB) to use for selecting the genes used for the module score");
+				System.out.println("-metadata %s \t[Required, or -geneset]Name of the metadata (in the Loom) to use for selecting the genes used for the module score");
+				System.out.println("-dataset %s \t[Required]Name of the dataset (in the Loom) to use for computing the module score on its values");
+				System.out.println("-oAnnot %s \t[Optional] Output metadata for storing the scores (instead of JSON file)");
+				System.out.println("-seed %i \tValue of the seed for the pseudo-random generator (default = 42)");
+				System.out.println("-nBackgroundGenes %i \tNumber of background gene to take randomly (with replacement) from one features' same bin (default = 100)");
+				System.out.println("-nBins %i \tNumber of bins to generate (default = 24)");
+				System.out.println("-sel %s \tIn case of a metadata, name of the reference selection");
+				System.out.println("-h %s \t\tTo change specific host (default is " + Config.getProperty("mDbHost") + ")");
 				break;
 			case Preparsing: 
 				System.out.println("Preparsing Mode\n\nOptions:");
@@ -1882,12 +2195,12 @@ public class Parameters
 				break;
 			case Parsing: 
 				System.out.println("Parsing Mode\n\nOptions:");
-				System.out.println("-ncells %s \t\t[Required] Number of cells (from preparsing)");
-				System.out.println("-ngenes %s \t\t[Required] Number of genes (from preparsing)");
+				System.out.println("-ncells %s \t[Required] Number of cells (from preparsing)");
+				System.out.println("-ngenes %s \t[Required] Number of genes (from preparsing)");
+				System.out.println("-f %s \t\t[Required] File to parse.");
+				System.out.println("-type %s \tFile type [RAW_TEXT, LOOM, H5_10x, ARCHIVE, ARCHIVE_COMPRESSED, COMPRESSED]");
 				System.out.println("-col %s \tName Column [none, first, last].");
 				System.out.println("-o %s \t\tOutput folder.");
-				System.out.println("-f %s \t\tFile to parse.");
-				System.out.println("-type %s \t\tFile type [RAW_TEXT, LOOM, H5_10x, ARCHIVE, ARCHIVE_COMPRESSED, COMPRESSED]");
 				System.out.println("-organism %i \tId of the organism.");
 				System.out.println("-header %b \tThe file has a header [true, false].");
 				System.out.println("-sel %s \tIn case of an archive, or a h5 with multiple groups, name of entry to load as a dataset.");
@@ -1910,10 +2223,13 @@ public class Parameters
 				System.out.println("-o %s \t\tOutput folder.");
 				System.out.println("-loom %s \t\tLoom file to annotate.");
 				System.out.println("-f %s \t\tFile to parse.");
-				System.out.println("-type %s \t\tFile type [RAW_TEXT, LOOM, H5_10x, ARCHIVE, ARCHIVE_COMPRESSED, COMPRESSED]");
+				System.out.println("-type %s \t\tFile type [RAW_TEXT, LOOM, H5_10x, ARCHIVE, ARCHIVE_COMPRESSED, COMPRESSED] (of note, LOOM and H5_10x is not handled for now)");
 				System.out.println("-header %b \tThe file has a header [true, false].");
 				System.out.println("-sel %s \tIn case of an archive, or a h5 with multiple groups, name of entry to load as a dataset.");
 				System.out.println("-d %s \t\tDelimiter.");
+				System.out.println("-which %s \tMetadata type of annotation [gene, cell] (default is CELL).");
+				System.out.println("-metadataType %s \tMetadata types [DISCRETE, NUMERIC, STRING], separated by comma if multiple metadata to load (default is to impute them for each metadata).");
+				System.out.println("-removeAmbiguous\tWith this option, all ambiguous genes are discarded (default is to take all of them)");
 				break;
 			case CreateCellSelection:
 				System.out.println("CreateCellSelection Mode\n\nOptions:");
@@ -1932,7 +2248,9 @@ public class Parameters
 				System.out.println("-indexes %s \t[One is required] Index(es) of the row to read (separated by comma if multiple)");
 				System.out.println("-names %s \t[One is required] Name(s) of the gene to extract (separated by comma if multiple)");
 				System.out.println("-display-names %s \t[Optional] For adding the name(s) of the cell/genes extracted in the output JSON");
+				System.out.println("-display-stable-ids %s \t[Optional] For adding the stable_id(s) of the cell/genes extracted in the output JSON");
 				System.out.println("-prec \t[Optional] For trimming the values to this number of significant number after the decimal (default = 3).");
+				System.out.println("--sort \t[Optional] For sorting the returned values. Returns an additional vector with the original indexes order.");
 				break;
 			case ExtractCol: 
 				System.out.println("ExtractCol Mode\n\nOptions:");
@@ -1942,7 +2260,21 @@ public class Parameters
 				System.out.println("-indexes %s \t[One is required] Index(es) of the col to read (separated by comma if multiple)");
 				System.out.println("-names %s \t[One is required] Name(s) of the cell to extract (separated by comma if multiple)");
 				System.out.println("-display-names %s \t[Optional] For adding the name(s) of the cell/genes extracted in the output JSON");
-				System.out.println("-prec \t[Optional] For trimming the values to this number of significant number after the decimal (default = 3).");
+				System.out.println("-display-stable-ids %s \t[Optional] For adding the stable_id(s) of the cell/genes extracted in the output JSON");
+				System.out.println("-prec %i \t[Optional] For trimming the values to this number of significant number after the decimal (default = 3).");
+				break;
+			case ExtractDataset: 
+				System.out.println("ExtractDataset Mode\n\nOptions:");
+				System.out.println("--loom %s \tLoom file to read");
+				System.out.println("-o | --output-file %s \tOutput file (default = standard output)");
+				System.out.println("-t | --output-type %s \t[JSON, PLAIN_TEXT] Output type (default = JSON)");
+				System.out.println("--iAnnot %s \tPath of input dataset (default = '/matrix')");
+				System.out.println("--row-names \tFor adding the row names in the output file");
+				System.out.println("--col-names \tFor adding the col names in the output file");
+				System.out.println("--prec %i \tFor trimming the values to this number of significant number after the decimal (default = 3).");
+				System.out.println("--col-indexes %s\tIndex(es) of the columns to export (separated by comma if multiple)");
+				System.out.println("--col-stableids %s\tStable_id(s) of the columns to export (separated by comma if multiple)");
+				System.out.println("--loom-cells %s\tLoom file of the columns/cells to export (default: same loom)");
 				break;
 			case DimensionReduction: 
 				System.out.println("Dimension Reduction Mode\n\nOptions:");
@@ -1996,21 +2328,22 @@ public class Parameters
 				System.out.println("-o %s \t\tOutput folder where are the 'not_found_genes.txt', 'output.json' and 'gene_names.json' files to modify.");
 				System.out.println("-j %s \t\tThe JSON file containing the gene names.");
 				break;
-			case ListMetaData: 
+			case ListMetadata: 
 				System.out.println("ListMetadata Mode\n\nOptions:");
 				System.out.println("-o %s \t[Required] Output JSON file.");
 				System.out.println("-f %s \t[Required] Loom file to read.");
 				break;
-			case ExtractMetaData: 
-				System.out.println("ExtractMetaData Mode\n\nOptions:");
-				System.out.println("-o %s \t[Optional] Output JSON file.");
-				System.out.println("-loom %s \t[Required] Loom file to read.");
-				System.out.println("-meta %s \t[Required or -metaJSON] Name of the metadata to extract.");
-				System.out.println("-metaJSON %s \t[Required or -meta] JSON file containing full path of metadata(s) to extract.");
-				System.out.println("-no-values \t[Optional] For not displaying the values.");
-				System.out.println("-names \t[Optional] For displaying the gene/cell names.");
-				System.out.println("-prec \t[Optional] For trimming the values to this number of significant number after the decimal (default = 3).");
-				System.out.println("-type %s \t\t[Optional] Type of the metadata (for not guessing it) [DISCRETE, NUMERIC, STRING]");
+			case ExtractMetadata: 
+				System.out.println("ExtractMetadata Mode\n\nOptions:");
+				System.out.println("-o %s\t[Optional] Output JSON file.");
+				System.out.println("-loom %s\t[Required] Loom file to read.");
+				System.out.println("-meta %s\t[Required or -metaJSON] Name of the metadata to extract.");
+				System.out.println("-metaJSON %s\t[Required or -meta] JSON file containing full path of metadata(s) to extract.");
+				System.out.println("-no-values\t[Optional] For not displaying the values.");
+				System.out.println("-names\t[Optional] For displaying the gene/cell names.");
+				System.out.println("-prec %i\t[Optional] For trimming the values to this number of significant number after the decimal (default = 3).");
+				System.out.println("--scientific \t[Optional] For outputting the numeric results in scientific notation.");
+				System.out.println("-type %s\t\t[Optional] Type of the metadata (for not guessing it) [DISCRETE, NUMERIC, STRING]");
 				break;
 			case MatchValues: 
 				System.out.println("MatchValues Mode\n\nOptions:");
@@ -2022,9 +2355,10 @@ public class Parameters
 				break;
 			case RemoveMetaData:
 				System.out.println("RemoveMetaData Mode\n\nOptions:");
-				System.out.println("-o %s \t[Required] Output folder for JSON file.");
+				System.out.println("-o %s \t[Optional] Output JSON file.");
 				System.out.println("-loom %s \t[Required] Loom file to modify.");
-				System.out.println("-meta %s \t[Required] Full path of the metadata to remove.");
+				System.out.println("-meta %s \t[Required or -metaJSON] Full path of the metadata to remove.");
+				System.out.println("-metaJSON %s \t[Required or -meta] JSON file containing full path of metadata(s) to remove.");
 				break;
 			case CopyMetaData:
 				System.out.println("CopyMetaData Mode\n\nOptions:");
@@ -2034,15 +2368,15 @@ public class Parameters
 				System.out.println("-metaJSON %s \t[Required or -meta] JSON file containing full path of metadata(s) to copy.");
 				System.out.println("-o %s \t[Optional] Output JSON file containing metadata that were actually copied.");
 				break;
-			case FilterCells: 
-				System.out.println("FilterCells Mode\n\nOptions:");
+			case FilterCols: 
+				System.out.println("FilterCols Mode\n\nOptions:");
 				System.out.println("-o %s \t[Required] Output folder for generated Loom and JSON files.");
 				System.out.println("-loom %s \t[Required] Loom file to read.");
 				System.out.println("-col_names_file %s \t[Required one of both] JSON file containing Cells to filter out.");
 				System.out.println("-col_indexes_file %s \t[Required one of both] JSON file containing Cells to filter out.");
 				break;
-			case FilterGenes: 
-				System.out.println("FilterGenes Mode\n\nOptions:");
+			case FilterRows: 
+				System.out.println("FilterRows Mode\n\nOptions:");
 				System.out.println("-o %s \t\tOutput folder.");
 				System.out.println("-loom %s \tFile to parse.");
 				System.out.println("-m %s \t\tModel to use for filtering. It should be one of the following: [basic, cpm, keep]");

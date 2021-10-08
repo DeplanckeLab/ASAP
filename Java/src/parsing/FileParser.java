@@ -25,6 +25,7 @@ import json.PreparsingJSON;
 import model.MapGene;
 import model.MetaOn;
 import model.Metadata;
+import model.Metatype;
 import model.Parameters;
 import parsing.model.ColumnName;
 import parsing.model.FileType;
@@ -130,12 +131,288 @@ public class FileParser
     
     public static void parseMetadata()
     {
-    	
+    	//System.out.println("Parsing metadata file : " + Parameters.fileName + " as a " + Parameters.fileType + " file.");
+    	if(Parameters.fileType == FileType.H5_10x || Parameters.fileType == FileType.LOOM) new ErrorJSON("This file is a HDF5 file. ASAP cannot extract metadata from these files atm.");
+    	switch(Parameters.fileType) // We assume here that the file type is correct (because we preparsed the file)
+    	{
+    		case RAW_TEXT:
+				try
+				{
+					parseMeta(new BufferedReader(new FileReader(Parameters.fileName)));
+				}
+				catch(NumberFormatException nfe) { new ErrorJSON("Your data matrix contains non-numeric values." + (Parameters.has_header?"":"No header is specified in the options, but maybe there is one?") + (Parameters.name_column == ColumnName.NONE?"":"You did not specify a column with gene_name, but maybe there is one?") + (Parameters.name_column == ColumnName.FIRST?"":"You specified first column as the one containing gene_name, but maybe it's another one?") + (Parameters.name_column == ColumnName.LAST?"":"You specified last column as the one containing gene_name, but maybe it's another one?")); }
+				catch(IOException ioe) { new ErrorJSON("Tried to read your file as a PLAIN TEXT file, but it failed."); }
+    			break;
+    		case ARCHIVE:
+    		case ARCHIVE_COMPRESSED:
+    		case COMPRESSED:
+				try
+				{
+					parseMeta(new BufferedReader(new InputStreamReader(CompressionHandler.getReader())));
+				}
+				catch(NumberFormatException nfe) { new ErrorJSON("Your data matrix contains non-numeric values. Did you forget there is a header?\",\"detected_format\":\"" + Parameters.fileType); }
+				catch(IOException ioe) { new ErrorJSON("Tried to read your file as a ARCHIVE/COMPRESSED file, but it failed."); }
+				break;
+    		case H5_10x:
+    		case LOOM:
+    		default:
+    			new ErrorJSON("This file format is not handled.");
+    	}
     }
     
+    public static void parseMeta(BufferedReader br) throws IOException
+    {
+    	// JSON object
+    	MetaPreparse g;
+    	if(Parameters.selection == null) g = new MetaPreparse(Parameters.fileName.substring(Parameters.fileName.lastIndexOf("/") + 1));
+    	else g = new MetaPreparse(Parameters.selection);
+    	
+    	// Initialize objects that will be output in JSON
+    	LoomFile loom = new LoomFile("r+", Parameters.loomFile);
+    	if(Parameters.which == MetaOn.CELL)
+    	{
+    		g.cellNames = loom.getCellNames();
+    		g.cellMap = new HashMap<>();
+    		for(int i = 0; i < g.cellNames.size(); i++) g.cellMap.put(g.cellNames.get(i), i); // For faster comparison
+    	}
+    	else
+    	{
+    		g.geneNames = loom.getGeneNames();
+    		g.geneMap = new HashMap<>();
+    		for(int i = 0; i < g.geneNames.length; i++) 
+    		{
+    			Gene gene = g.geneNames[i];
+				String[] tokens;
+				if(gene.name != null)
+				{	
+					tokens = gene.name.split(",");
+					for(String t:tokens) 
+					{
+						List<Integer> list = g.geneMap.get(t);
+						if(list == null) list = new ArrayList<Integer>();
+						list.add(i);
+						g.geneMap.put(t, list); // For faster comparison
+					}
+				}
+				if(gene.ensembl_id != null)
+				{
+					tokens = gene.ensembl_id.split(",");
+					for(String t:tokens) 
+					{
+						List<Integer> list = g.geneMap.get(t);
+						if(list == null) list = new ArrayList<Integer>();
+						list.add(i);
+						g.geneMap.put(t, list); // For faster comparison
+					}
+				}
+				// We do not store alt names in the Loom file anyway
+    		}
+    	}
+    	g.metaIndex = new HashMap<>();
+    	g.metaIndexMatchParam = new HashMap<>();
+    	int iMatchParam = 0;
+    	
+		// How to read each line?
+		int startI = 0;
+		int endI = 0;
+		int nameI = 0;
+    	
+    	// Start to read file
+    	String line = br.readLine();
+    	String[] tokens = line.split(Parameters.delimiter, -1); // limit = -1 to keep trailing empty string
+
+    	if(Parameters.has_header) 
+    	{
+    		String[] header = tokens;
+    		line = br.readLine();
+    		tokens = line.split(Parameters.delimiter, -1); // limit = -1 to keep trailing empty string
+    		if(header.length != tokens.length && header.length - 1 != tokens.length) new ErrorJSON("Header size (" + header.length +  ") does not match first line size (" + tokens.length + ").");
+    		
+    		// First, need to read header for metadata names. Thus, search for header names
+    		endI = header.length;
+    		switch(Parameters.name_column)
+    		{
+    			case FIRST:
+    				if(header.length == tokens.length) startI = 1;
+    				break;
+    			case LAST:
+    				if(header.length == tokens.length) endI = header.length - 1;
+    				break;
+    			case NONE:
+    				if(header.length != tokens.length) new ErrorJSON("Header size (" + header.length +  ") does not match first line size (" + tokens.length + ").");
+    		}
+    		
+    		// Create a Metadata object for each header, except for the Gene/Cell Name
+    		for (int i = startI; i < endI; i++) 
+    		{
+    			Metadata m = new Metadata();
+    			m.path = Utils.handleSpecialCharacters(header[i].trim());
+    			m.on = Parameters.which;
+    			if(Parameters.which == MetaOn.CELL) 
+    			{
+    				m.path = "/col_attrs/" + m.path;
+    				m.values = new StringArray64(g.cellNames.size());
+    			}
+    			else 
+    			{
+    				m.path = "/row_attrs/" + m.path;
+    				m.values = new StringArray64(g.geneNames.length);
+    			}
+    			g.metaIndex.put(i, m);
+    			g.metaIndexMatchParam.put(i, iMatchParam);
+    			iMatchParam++;
+			}
+    		
+    		// Now, we will be reading the Metadata values  		
+    		switch(Parameters.name_column)
+    		{
+    			case FIRST:
+    				startI = 1;
+    				nameI = 0;
+    				endI = header.length;
+    				break;
+    			case LAST:
+      				startI = 0;
+    				nameI = header.length - 1;
+    				endI = header.length - 1;
+    				break;
+    			case NONE:
+      				startI = 0;
+    				nameI = -1;
+    				endI = header.length;
+    		}
+    	}
+    	else
+    	{  		
+    		endI = tokens.length;
+    		switch(Parameters.name_column)
+    		{
+    			case FIRST:
+    				startI = 1;
+    				break;
+    			case LAST:
+    				nameI = tokens.length - 1;
+    				endI = tokens.length - 1;
+    				break;
+    			case NONE:
+    				nameI = -1;
+    		}
+    		
+    		// Create a Metadata object for each value, except for the Gene/Cell Name
+    		for (int i = startI; i < endI; i++) 
+    		{
+    			Metadata m = new Metadata();
+    			m.path = "Metadata_"+(i+1); // Generated name
+    			m.on = Parameters.which;
+    			if(Parameters.which == MetaOn.CELL) 
+    			{
+    				m.path = "/col_attrs/" + m.path;
+    				m.values = new StringArray64(g.cellNames.size());
+    			}
+    			else 
+    			{
+    				m.path = "/row_attrs/" + m.path;
+    				m.values = new StringArray64(g.geneNames.length);
+    			}
+    			g.metaIndex.put(i, m);
+    			g.metaIndexMatchParam.put(i, iMatchParam);
+    			iMatchParam++;
+			}
+    	}
+   
+    	// Read remaining of the file
+    	long l = 0;
+  		while(line != null)
+		{	
+    		for (int i = startI; i < endI; i++) 
+    		{
+    			Metadata m = g.metaIndex.get(i);
+    			String value = Utils.handleSpecialCharacters(tokens[i]);
+    			if(nameI == -1) m.values.set(l, value); // Assumed to be ordered the same way	
+    			else
+    			{
+    				String name =  Utils.handleSpecialCharacters(tokens[nameI]);
+    				if(Parameters.which == MetaOn.CELL)
+    				{
+		    			Integer index = g.cellMap.get(name);
+		    			if(index != null) m.values.set(index, value); // If not found => discarded
+    				}
+    				else // GENES
+    				{
+		    			List<Integer> indexes = g.geneMap.get(name);
+		    			if(indexes != null) // If not found => discarded
+		    			{
+		    				if(indexes.size() == 1) m.values.set(indexes.get(0), value);
+			    			else if(!Parameters.removeAmbiguous) // In case this option is selected
+			    			{
+			    				for(Integer k:indexes) m.values.set(k, value); // Add for each gene
+			    			}
+		    			}
+    				}
+    			}
+    			m.stringWasCorrected = true;
+			}
+    		l++;
+    		line = br.readLine();
+    		if(line != null) tokens = line.split(Parameters.delimiter, -1);
+		}
+		
+  		// Output String
+  		StringBuilder sb = new StringBuilder();
+  		sb.append("{\"metadata\":[");
+  		
+		// Complete and write metadata in Loom
+  		String prefix = "";
+		for(Integer index:g.metaIndex.keySet()) 
+		{
+			Metadata meta = g.metaIndex.get(index);
+			if(Parameters.metatypes != null) meta.type = Parameters.metatypes[g.metaIndexMatchParam.get(index)];
+			else meta.inferType();
+			
+			// In case we did not infer the type, we need to populate the categories
+			if(meta.type == Metatype.DISCRETE && (meta.categories == null || meta.categoriesMap == null)) 
+			{
+				if(meta.values != null)
+				{
+					// Fill categories
+					meta.categories = new HashSet<>();
+					meta.categoriesMap = new HashMap<String, Long>();
+					for(long i = 0; i < meta.values.size(); i++)
+					{
+						String v = meta.values.get(i);				
+						boolean added = meta.categories.add(v);
+						if(added) meta.categoriesMap.put(v, 1L);
+						else meta.categoriesMap.put(v, meta.categoriesMap.get(v) + 1);
+					}
+					meta.nbCat = meta.categories.size();
+				}
+			}
+			
+			// Check if empty
+			if(meta.categories != null && meta.categories.size() == 1 && meta.categories.iterator().next().equals(""))
+			{
+				// Empty metadata => Do not add
+			}
+			else
+			{
+				sb.append(prefix);
+				meta.addMeta(sb, false, null, Long.MAX_VALUE);
+				loom.writeMetadata(meta);
+				prefix = ",";
+			}
+		}
+		sb.append("]}");
+		
+		// Close handle
+		loom.close();
+		
+		// Writing results
+		Utils.writeJSON(sb, Parameters.JSONFileName);
+    }
+       
     public static void preparseMetadata()
     {
-    	System.out.println("Preparsing metadata file : " + Parameters.fileName);
+    	//System.out.println("Preparsing metadata file : " + Parameters.fileName);
     	HDF5Tools.checkIfHDF5orLoom(); // Check if it is an HDF5 archive
     	if(Parameters.fileType == FileType.H5_10x || Parameters.fileType == FileType.LOOM) new ErrorJSON("This file is a HDF5 file. ASAP cannot extract metadata from these files atm.");
     	
@@ -144,7 +421,7 @@ public class FileParser
 			ArrayList<String> files = CompressionHandler.getList();
 			if(files == null) 
 			{
-				System.out.println("File format not detected. Assumed to be plain text.");
+				//System.out.println("File format not detected. Assumed to be plain text.");
 				Parameters.fileType = FileType.RAW_TEXT;
 				try
 				{
@@ -158,7 +435,7 @@ public class FileParser
 				if(files.size() == 0) new ErrorJSON("Your archive/compressed file is empty or corrupted.\",\"detected_format\":\"" + Parameters.fileType);
 				else if(files.size() == 1)
 				{
-					System.out.println("A single file was detected in your archive. Processing automatically the preparsing...");
+					//System.out.println("A single file was detected in your archive. Processing automatically the preparsing...");
 					Parameters.selection = files.get(0);
     				try
     				{
@@ -169,7 +446,7 @@ public class FileParser
 				}
 				else
 				{
-					System.out.println("Several files are detected in your archive, but no selection was made using -sel option. Therefore creating a JSON listing the archive content.");
+					//System.out.println("Several files are detected in your archive, but no selection was made using -sel option. Therefore creating a JSON listing the archive content.");
 					PreparsingJSON.writeListingJSON(files);
 				}
 			}
@@ -183,7 +460,6 @@ public class FileParser
 			catch(NumberFormatException nfe) { new ErrorJSON("Your metadata matrix contains non-numeric values. Did you forget there is a header?\",\"detected_format\":\"" + Parameters.fileType); }
 			catch(IOException ioe) { new ErrorJSON("Tried to read your file as a COMPRESSED/ARCHIVED file, but it failed.\",\"detected_format\":\"" + Parameters.fileType); }
 		}
-    	
     }
     
     public static void preparseMeta(BufferedReader br) throws IOException
@@ -246,13 +522,13 @@ public class FileParser
     	
     	// Start to read file
     	String line = br.readLine();
-    	String[] tokens = line.split(Parameters.delimiter);
+    	String[] tokens = line.split(Parameters.delimiter, -1); // limit = -1 to keep trailing empty string
 
     	if(Parameters.has_header) 
     	{
     		String[] header = tokens;
     		line = br.readLine();
-    		tokens = line.split(Parameters.delimiter);
+    		tokens = line.split(Parameters.delimiter, -1); // limit = -1 to keep trailing empty string
     		if(header.length != tokens.length && header.length - 1 != tokens.length) new ErrorJSON("Header size (" + header.length +  ") does not match first line size (" + tokens.length + ").");
     		
     		// First, need to read header for metadata names. Thus, search for header names
@@ -273,7 +549,7 @@ public class FileParser
     		for (int i = startI; i < endI; i++) 
     		{
     			Metadata m = new Metadata();
-    			m.path = header[i].trim();
+    			m.path = Utils.handleSpecialCharacters(header[i].trim());
     			m.on = Parameters.which;
     			if(Parameters.which == MetaOn.CELL) m.values = new StringArray64(g.cellNames.size());
     			else m.values = new StringArray64(g.geneNames.length);
@@ -334,34 +610,51 @@ public class FileParser
     		for (int i = startI; i < endI; i++) 
     		{
     			Metadata m = g.metaIndex.get(i);
-    			if(nameI == -1) m.values.set(l, tokens[i]); // Assumed to be ordered the same way	
+    			String value = Utils.handleSpecialCharacters(tokens[i]);
+    			if(nameI == -1) m.values.set(l, value); // Assumed to be ordered the same way	
     			else
     			{
-    				String name = tokens[nameI];
+    				String name = Utils.handleSpecialCharacters(tokens[nameI]);
+    				if(i >= tokens.length) value = "";
+    				if(value.equals("")) m.missingValues++;
     				if(Parameters.which == MetaOn.CELL)
     				{
 		    			Integer index = g.cellMap.get(name);
 		    			if(index == null) g.not_found.add(name);
-		    			else m.values.set(index, tokens[i]);
+		    			else m.values.set(index, value);
     				}
     				else
     				{
 		    			List<Integer> indexes = g.geneMap.get(name);
 		    			if(indexes == null) g.not_found.add(name);
-		    			else if(indexes.size() == 1) m.values.set(indexes.get(0), tokens[i]);
-		    			else g.ambiguous.add(name);
+		    			else if(indexes.size() == 1) m.values.set(indexes.get(0), value);
+		    			else 
+		    			{
+		    				g.ambiguous.add(name);
+		    				// For now, I fill them all
+		    				for(int idx:indexes) m.values.set(idx, value);
+		    			}
     				}
     			}
+    			m.stringWasCorrected = true;
 			}
+
     		l++;
     		line = br.readLine();
-    		if(line != null) tokens = line.split(Parameters.delimiter);
+    		if(line != null) tokens = line.split(Parameters.delimiter, -1); // limit = -1 to keep trailing empty string
 		}
 		
 		// Inferring metadata type
 		for(Integer index:g.metaIndex.keySet()) g.metaIndex.get(index).inferType(); 
     		
-    	PreparsingJSON.writeOutputJSON(g);
+		// Prepare String
+    	StringBuilder sb = new StringBuilder();
+	    sb.append("{\"detected_format\":\"").append(Parameters.fileType).append("\",");
+	    if(Parameters.fileType == FileType.LOOM) sb.append("\"loom_version\":\"").append(Parameters.loomVersion).append("\",");
+    	sb.append(g).append("}");
+	    
+    	// Write JSON
+		Utils.writeJSON(sb, Parameters.JSONFileName);
     }
     
     private static void preparseText(long nRows, BufferedReader br) throws IOException, NumberFormatException
@@ -373,13 +666,13 @@ public class FileParser
     	else g = new GroupPreparse(Parameters.selection);
 
     	res.add(g);
-    	String[] tokens = line.split(Parameters.delimiter);
+    	String[] tokens = line.split(Parameters.delimiter, -1); // limit = -1 to keep trailing empty string
     	if(Parameters.has_header) 
     	{
     		String[] header = tokens;
     		line = br.readLine();
     		if(line == null) new ErrorJSON("There is no data in your file. Possible reasons: Not a matrix or weird encoding (is it UTF-8?)\",\"detected_format\":\"" + Parameters.fileType);
-    		tokens = line.split(Parameters.delimiter);
+    		tokens = line.split(Parameters.delimiter, -1); // limit = -1 to keep trailing empty string
     		g.nbGenes = nRows - 1;
     		switch(Parameters.name_column)
     		{
@@ -398,10 +691,10 @@ public class FileParser
         				g.geneNames[i] = tokens[0];
         				for(int j = 1; j < g.matrix[i].length + 1; j++)
         				{
-        					g.matrix[i][j - 1] = Float.parseFloat(tokens[j]);
+        					g.matrix[i][j - 1] = Float.parseFloat(tokens[j].replaceAll(",", "."));
         					if(g.matrix[i][j - 1] != (int)g.matrix[i][j - 1]) g.isCount = false;
         				}
-        				tokens = br.readLine().split(Parameters.delimiter);
+        				tokens = br.readLine().split(Parameters.delimiter, -1); // limit = -1 to keep trailing empty string
     				}
     				break;
     			case LAST:
@@ -418,10 +711,10 @@ public class FileParser
         				g.geneNames[i] = tokens[(int)g.nbCells];  // TODO if too many cells (more than 2,147,483,647), it will not work. Use the String64 array instead
         				for(int j = 0; j < g.matrix[i].length; j++)
         				{
-        					g.matrix[i][j] = Float.parseFloat(tokens[j]);
+        					g.matrix[i][j] = Float.parseFloat(tokens[j].replaceAll(",", "."));
         					if(g.matrix[i][j] != (int)g.matrix[i][j]) g.isCount = false;
         				}
-        				tokens = br.readLine().split(Parameters.delimiter);
+        				tokens = br.readLine().split(Parameters.delimiter, -1); // limit = -1 to keep trailing empty string
     				}
     				break;
     			case NONE:
@@ -435,10 +728,10 @@ public class FileParser
     					if(tokens.length != g.nbCells) new ErrorJSON("There should be " + g.nbCells + " cells, but l."+ (i+2) + " has " + tokens.length + " elements. Please correct file or parsing parameters.\",\"detected_format\":\"" + Parameters.fileType);
         				for(int j = 0; j < g.matrix[i].length; j++)
         				{
-        					g.matrix[i][j] = Float.parseFloat(tokens[j]);
+        					g.matrix[i][j] = Float.parseFloat(tokens[j].replaceAll(",", "."));
         					if(g.matrix[i][j] != (int)g.matrix[i][j]) g.isCount = false;
         				}
-        				tokens = br.readLine().split(Parameters.delimiter);
+        				tokens = br.readLine().split(Parameters.delimiter, -1); // limit = -1 to keep trailing empty string
     				}
     		}
     	}
@@ -457,10 +750,10 @@ public class FileParser
         				g.geneNames[i] = tokens[0];
         				for(int j = 1; j < g.matrix[i].length + 1; j++)
         				{
-         					g.matrix[i][j - 1] = Float.parseFloat(tokens[j]);
+         					g.matrix[i][j - 1] = Float.parseFloat(tokens[j].replaceAll(",", "."));
         					if(g.matrix[i][j - 1] != (int)g.matrix[i][j - 1]) g.isCount = false;
         				}
-        				tokens = br.readLine().split(Parameters.delimiter);
+        				tokens = br.readLine().split(Parameters.delimiter, -1); // limit = -1 to keep trailing empty string
     				}
     				break;
     			case LAST:
@@ -473,10 +766,10 @@ public class FileParser
         				g.geneNames[i] = tokens[(int)g.nbCells];  // TODO if too many cells (more than 2,147,483,647), it will not work. Use the String64 array instead
         				for(int j = 0; j < g.matrix[i].length; j++)
         				{
-        					g.matrix[i][j] = Float.parseFloat(tokens[j]);
+        					g.matrix[i][j] = Float.parseFloat(tokens[j].replaceAll(",", "."));
         					if(g.matrix[i][j] != (int)g.matrix[i][j]) g.isCount = false;
         				}
-        				tokens = br.readLine().split(Parameters.delimiter);
+        				tokens = br.readLine().split(Parameters.delimiter, -1); // limit = -1 to keep trailing empty string
     				}
     				break;
     			case NONE:
@@ -487,10 +780,10 @@ public class FileParser
     					if(tokens.length != g.nbCells) new ErrorJSON("There should be " + g.nbCells + " cells, but l."+ (i+1) + " has " + tokens.length + " elements. Please correct file or parsing parameters.\",\"detected_format\":\"" + Parameters.fileType);
         				for(int j = 0; j < g.matrix[i].length; j++)
         				{
-        					g.matrix[i][j] = Float.parseFloat(tokens[j]);
+        					g.matrix[i][j] = Float.parseFloat(tokens[j].replaceAll(",", "."));
         					if(g.matrix[i][j] != (int)g.matrix[i][j]) g.isCount = false;
         				}
-        				tokens = br.readLine().split(Parameters.delimiter);
+        				tokens = br.readLine().split(Parameters.delimiter, -1); // limit = -1 to keep trailing empty string
     				}
     		}
     	}
@@ -508,11 +801,12 @@ public class FileParser
     	json.loom.createEmptyFloat32MatrixDataset("/matrix", Parameters.nGenes, Parameters.nCells, Parameters.defaultChunkX, Parameters.defaultChunkY); // "/matrix", 
     	json.data.ens_names = new StringArray64(json.data.nber_genes); // After checking the database, this is filled appropriately
     	json.data.gene_names = new StringArray64(json.data.nber_genes); // After checking the database, this is filled appropriately
-    	
+    	json.data.original_gene_names = new StringArray64(json.data.nber_genes); // Original gene names
+    	    	
     	// Header
     	if(Parameters.has_header) // Parsing Header if exist
     	{
-    		String[] header = line.split(Parameters.delimiter); // TODO does not work if too many cells
+    		String[] header = line.split(Parameters.delimiter, -1); // limit = -1 to keep trailing empty string
     		if(header.length == Parameters.nCells) json.data.cell_names = new StringArray64(header);
     		else if(header.length == Parameters.nCells + 1)
     		{
@@ -549,7 +843,7 @@ public class FileParser
         {
         	current_line++; // To shift the count from [0, n-1] TO [1, n]
         	
-        	String[] tokens = line.split(Parameters.delimiter);    
+        	String[] tokens = line.split(Parameters.delimiter, -1); // limit = -1 to keep trailing empty string   
         	if(tokens.length != ncols) new ErrorJSON("Row " + current_line+ " contains a different number of values (" + tokens.length + ") than the other rows (" + ncols + ")");
         	
  			// If I am here, it means that the number of values is correct => I grab the gene name if exists
@@ -560,9 +854,10 @@ public class FileParser
 				case LAST: gene = tokens[tokens.length - 1].trim().replaceAll("'|\"", ""); break;
 				case NONE: gene = "Gene_" + current_line; // Starts at 1 is more pretty
 			}
-        			
+			
 			// Reading the gene name, and checking in DB
-			MapGene.addGene(gene, json.data, current_line - 1);
+			json.data.original_gene_names.set(current_line - 1, gene); // This one will NOT be modified by MapGene.parseGene
+			json.data.gene_names.set(current_line - 1, gene);
 			MapGene.parseGene(json.data, current_line - 1);
 	
 			// Handle biotypes/Mito
@@ -588,7 +883,7 @@ public class FileParser
     			// Parse to a float and fill the appropriate arrays
 				try
 				{
-    				float v = Float.parseFloat(stringValue);
+    				float v = Float.parseFloat(stringValue.replaceAll(",", "."));
     				int rv = Math.round(v);
     				if(Math.abs(rv - v) < 1E-5) v = rv;// if the diff between the value and the rounded is lower than 1E-5 I round it (to avoid Java bugs with float representation)
     				else json.data.is_count_table = false;

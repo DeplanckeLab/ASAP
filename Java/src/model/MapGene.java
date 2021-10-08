@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 
-import bigarrays.StringArray64;
 import hdf5.loom.LoomData;
 import parsing.model.Gene;
 
@@ -23,19 +22,25 @@ public class MapGene
 		obsolete_db = new HashMap<>();
 	}
 	
-	public static Gene retrieveLatest(ArrayList<Gene> genes) // If two are equal, retrieve the first
+	public static Gene retrieveLatest(String gene, String ens, ArrayList<Gene> genes) // If two are equal, check the font case, then retrieve the first
 	{
-		Gene res = null;
+		if(genes.size() == 0) return null;
+		if(genes.size() == 1) return genes.get(0);
+		// More than 1 hit
+		
+		// First check latest Ensembl release
+		ArrayList<Gene> latest = new ArrayList<Gene>();
 		int max = 0;
-		for(Gene g:genes) 
+		for(Gene g:genes) if(g.latest_ensembl_release > max) max = g.latest_ensembl_release;
+		for(Gene g:genes) if(g.latest_ensembl_release == max) latest.add(g);
+
+		// In case there are still many, check the raw font case for any difference
+		if(latest.size() > 1)
 		{
-			if(g.latest_ensembl_release > max)
-			{
-				max = g.latest_ensembl_release;
-				res = g;
-			}
+			for(Gene g:genes) if(gene != null && g.name.equals(gene)) return g; // Take first hit with exact same font case
 		}
-		return res;
+			
+		return latest.get(0); // Take first one
 	}
 	
 	public static void parseGenes(LoomData data) // Parsing all genes
@@ -75,7 +80,7 @@ public class MapGene
 		}
 
     	// Retrieve gene with latest release in Ensembl
-    	if(dbHit != null) gHit = MapGene.retrieveLatest(dbHit);
+    	if(dbHit != null) gHit = MapGene.retrieveLatest(gene, ens, dbHit);
 		
 		// Update the final entries for the Loom
 		data.ens_names.set(index, gHit.ensembl_id);
@@ -84,12 +89,5 @@ public class MapGene
 		data.sumExonLength.set(index, gHit.sum_exon_length);
 		data.gene_names.set(index, gHit.name);
     }
-	
-	public static void addGene(String gene, LoomData data, long index)
-	{
-		if(data.gene_names == null) data.gene_names = new StringArray64(data.nber_genes);
-		data.gene_names.set(index, gene);
-	}
-	
 	
 }

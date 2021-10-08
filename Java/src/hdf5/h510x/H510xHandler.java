@@ -69,11 +69,13 @@ public class H510xHandler
 			{
 				json.data.gene_names = readStringArray(reader, "/" + Parameters.selection + "/gene_names");
 				json.data.ens_names = readStringArray(reader, "/" + Parameters.selection + "/genes");
+				json.data.original_gene_names = json.data.gene_names.copy();
 			}
 			else // scATAC-seq
 			{
 				json.data.gene_names = readStringArray(reader, "/" + Parameters.selection + "/features/id");
 				json.data.ens_names = new StringArray64(json.data.gene_names.size());
+				json.data.original_gene_names = json.data.gene_names.copy();
 				// /features/feature_type = DISCRETE [peaks, ...?]
 				// /features/id = peak name
 				// /features/name = peak name

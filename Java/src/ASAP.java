@@ -23,6 +23,8 @@ import model.Metadata;
 import model.Metatype;
 import model.Mode;
 import model.Parameters;
+import model.Parameters.OutputType;
+import module_score.ModuleScore;
 import normalization.Normalization;
 import parsing.FileParser;
 import scaling.Scaling;
@@ -42,6 +44,7 @@ public class ASAP
 		
 		String[] args2 = readMode(args);
 		Parameters.load(args2, m);
+		Utils.initRandomGenerator();
 		switch(m)
 		{
 			case CreateKeggDB:
@@ -52,6 +55,9 @@ public class ASAP
 				break;
 			case Enrichment:
 				Enrichment.runEnrichment();
+				break;
+			case ModuleScore:
+				ModuleScore.runModuleScore();
 				break;
 			case DimensionReduction: 
 				FileDimReduc.reduceDimension();
@@ -74,10 +80,10 @@ public class ASAP
 				DBManager.disconnect();
 				FileParser.parse();
 				break;
-			case PreparseMetadata: 
+			case PreparseMetadata:
 				FileParser.preparseMetadata();
 				break;
-			case ParseMetadata: 
+			case ParseMetadata:
 				FileParser.parseMetadata();
 				break;
 			case ExtractRow:
@@ -100,17 +106,8 @@ public class ASAP
 				long nbGenes = dim[0];
 				long nbCells = dim[1];
 				dim = loom.getDimensions(Parameters.iAnnot); // dim[1] = nb of values to extract for each row
-				if(dim.length == 1) { loom.close(); new ErrorJSON("The dataset is not a matrix, it's an array. You should use ExtractMetaData instead"); }
+				if(dim.length == 1) { loom.close(); new ErrorJSON("The dataset is not a matrix, it's an array. You should use ExtractMetadata instead"); }
 				if(dim[1] == nbGenes && cellStableIds != null) { loom.close(); new ErrorJSON("You cannot request this dataset and specify -loom_cells"); }
-				StringArray64 names = null;
-				
-				// Retrieve names if asked
-				if(Parameters.displayNames)
-				{
-					if(dim[1] == nbCells) names = loom.getCellNames(); // depends of the metadata/dataset to extract
-					else if(dim[1] == nbGenes) names = loom.getGeneHGNC();
-					else new ErrorJSON("Not sure what to do here...");
-				}
 				
 				// Retrieve indexes if exist
 				if(Parameters.indexes == null) 
@@ -132,6 +129,13 @@ public class ASAP
 				// Creating output string
 	    		StringBuilder sb = new StringBuilder();
 	    		sb.append("{\"values\":[");
+	    		
+	    		// In case of sorting
+	    		StringBuilder sb2 = new StringBuilder();
+	    		if(Parameters.sort) sb2.append(",\"orders\":[");
+	    		HashMap<Long, int[]> orders = new HashMap<Long, int[]>(); // Keep the orders in memory
+	    		
+	    		// Start reading the values
 	    		String prefix = "";
 	    		if(dim[0] < 100) // TODO replace this by handling CONTIGUOUS / CHUNKED + Handle multiple read in same block
 	    		{
@@ -140,13 +144,20 @@ public class ASAP
 	    			for(long index:Parameters.indexes)
 					{
 						sb.append(prefix);
-						if(index == -1) sb.append("null");
+						if(Parameters.sort) sb2.append(prefix);
+						if(index == -1) 
+						{
+							sb.append("null");
+							if(Parameters.sort) sb2.append("null");
+						}
 						else
 						{
 							sb.append("[");
+							if(Parameters.sort) sb2.append("[");
 							String prefix2 = "";
 							if(cell_indexes != null) 
 							{
+								if(Parameters.sort) new ErrorJSON("Sort is not implemented in this case");
 								for(long ci = 0; ci < cell_indexes.size(); ci++)
 								{
 									long cellI = cell_indexes.get(ci);
@@ -157,13 +168,29 @@ public class ASAP
 							}
 							else 
 							{
-								for(int i = 0; i < matrix[(int)index].length; i++)
+								float[] row = matrix[(int)index];
+								if(Parameters.sort)
 								{
-									sb.append(prefix2).append(Utils.format(matrix[(int)index][i])); // TODO does not work if too big array
-									prefix2 = ",";
+									int[] order = Utils.order(row, false);
+									orders.put(index, order);
+									for(int i:order)
+									{
+										sb.append(prefix2).append(Utils.format(row[i]));
+										sb2.append(prefix2).append(i);
+										prefix2 = ",";
+									}
+								}
+								else
+								{
+									for(int i = 0; i < row.length; i++)
+									{
+										sb.append(prefix2).append(Utils.format(row[i])); // TODO does not work if too big array
+										prefix2 = ",";
+									}
 								}
 							}
 							sb.append("]");
+							if(Parameters.sort) sb2.append("]");
 						}
 						prefix = ",";
 					}
@@ -173,15 +200,22 @@ public class ASAP
 					for(long index:Parameters.indexes)
 					{
 						sb.append(prefix);
-						if(index == -1) sb.append("null");
+						if(Parameters.sort) sb2.append(prefix);
+						if(index == -1) 
+						{
+							if(Parameters.sort) sb2.append("null");
+							sb.append("null");
+						}
 						else
 						{
 							sb.append("[");
+							if(Parameters.sort) sb2.append("[");
 							float[] row = loom.readRow(index, Parameters.iAnnot); // TODO does not work if too big array // TODO handle multiple read in same block
 							String prefix2 = "";
 							
 							if(cell_indexes != null) 
 							{
+								if(Parameters.sort) new ErrorJSON("Sort is not implemented in this case");
 								for(long ci = 0; ci < cell_indexes.size(); ci++)
 								{
 									long cellI = cell_indexes.get(ci);
@@ -192,27 +226,50 @@ public class ASAP
 							}
 							else 
 							{
-								for(int i = 0; i < row.length; i++)
+								if(Parameters.sort)
 								{
-									sb.append(prefix2).append(Utils.format(row[i]));
-									prefix2 = ",";
+									int[] order = Utils.order(row, false);
+									orders.put(index, order);
+									for(int i:order)
+									{
+										sb.append(prefix2).append(Utils.format(row[i]));
+										sb2.append(prefix2).append(i);
+										prefix2 = ",";
+									}
+								}
+								else
+								{
+									for(int i = 0; i < row.length; i++)
+									{
+										sb.append(prefix2).append(Utils.format(row[i]));
+										prefix2 = ",";
+									}
 								}
 							}
 							sb.append("]");
+							if(Parameters.sort) sb2.append("]");
 						}
 						prefix = ",";
 					}
 					sb.append("]");
+					if(Parameters.sort) sb2.append("]");
 	    		}
-				loom.close();
-
+				
+				// In case we need to output the indexes as well 
+				if(Parameters.sort) sb.append(sb2);
+				
 				// If names to be added
 				if(Parameters.displayNames)
 				{
+					StringArray64 names = null;					
+					if(dim[1] == nbCells) names = loom.getCellNames(); // depends of the metadata/dataset to extract
+					else if(dim[1] == nbGenes) names = loom.getGeneHGNC();
+					else new ErrorJSON("Not sure what to do here...");
 					sb.append(",\"names\":[");
 					prefix = "";
 					if(cell_indexes != null) 
 					{
+						if(Parameters.sort) new ErrorJSON("Sort is not implemented in this case");
 						for(long ci = 0; ci < cell_indexes.size(); ci++)
 						{
 							long cellI = cell_indexes.get(ci);
@@ -223,6 +280,7 @@ public class ASAP
 					}
 					else 
 					{
+						// I don't sort the names....
 						for(String n:names)
 						{
 							sb.append(prefix).append("\"").append(n).append("\"");
@@ -231,7 +289,44 @@ public class ASAP
 					}
 					sb.append("]");
 				}
+				
+				// If stable_ids to be added
+				if(Parameters.export_stable_ids)
+				{
+					LongArray64 stable_ids = null;
+					if(dim[1] == nbCells) stable_ids = loom.getCellStableIds(); // depends of the metadata/dataset to extract
+					else if(dim[1] == nbGenes) stable_ids = loom.getGeneStableIds();
+					else new ErrorJSON("Not sure what to do here...");
+					sb.append(",\"stable_ids\":[");
+					prefix = "";
+					
+					if(cell_indexes != null) 
+					{
+						if(Parameters.sort) new ErrorJSON("Sort is not implemented in this case");
+						for(long ci = 0; ci < cell_indexes.size(); ci++)
+						{
+							long cellI = cell_indexes.get(ci);
+							if(cellI == -1) sb.append(prefix).append("null");
+							else sb.append(prefix).append(stable_ids.get(cellI)); // TODO does not work if too big array
+							prefix = ",";
+						}
+					}
+					else 
+					{
+						// I don't sort the ids....
+						for(Long id:stable_ids)
+						{
+							sb.append(prefix).append(id);
+							prefix = ",";
+						}
+					}
+					
+					sb.append("]");
+				}
 				sb.append("}");
+				
+				// Close handle
+				loom.close();
 				
 				// Writing results
 		    	Utils.writeJSON(sb, Parameters.JSONFileName);
@@ -245,16 +340,7 @@ public class ASAP
 				nbCells = dim[1];
 				dim = loom.getDimensions(Parameters.iAnnot); // dim[1] = nb of values to extract for each row
 				if(dim.length == 1) { loom.close(); new ErrorJSON("The dataset is not a matrix, it's an array. You should use ExtractMetaData instead"); }
-				names = null;
-				
-				// Retrieve names if asked
-				if(Parameters.displayNames)
-				{
-					if(dim[0] == nbCells) names = loom.getCellNames(); // depends of the metadata/dataset to extract
-					else if(dim[0] == nbGenes) names = loom.getGeneHGNC();
-					else new ErrorJSON("Not sure what to do here...");
-				}
-				
+
 				// Retrieve indexes if exist
 				if(Parameters.indexes == null) 
 				{
@@ -311,11 +397,14 @@ public class ASAP
 					}
 	    		}
 	    		sb.append("]");
-				loom.close();
 
 				// If names to be added
 				if(Parameters.displayNames)
 				{
+					StringArray64 names = null;
+					if(dim[0] == nbCells) names = loom.getCellNames(); // depends of the metadata/dataset to extract
+					else if(dim[0] == nbGenes) names = loom.getGeneHGNC();
+					else new ErrorJSON("Not sure what to do here...");
 					sb.append(",\"names\":[");
 					prefix = "";
 					for(String n:names)
@@ -325,21 +414,195 @@ public class ASAP
 					}
 					sb.append("]");
 				}
+				
+				// If stable_ids to be added
+				if(Parameters.export_stable_ids)
+				{
+					LongArray64 stable_ids = null;
+					if(dim[0] == nbCells) stable_ids = loom.getCellStableIds(); // depends of the metadata/dataset to extract
+					else if(dim[0] == nbGenes) stable_ids = loom.getGeneStableIds();
+					else new ErrorJSON("Not sure what to do here...");
+					sb.append(",\"stable_ids\":[");
+					prefix = "";
+					for(Long id:stable_ids)
+					{
+						sb.append(prefix).append(id);
+						prefix = ",";
+					}
+					sb.append("]");
+				}
 				sb.append("}");
+				
+				// Close Handle
+				loom.close();
 				
 				// Writing results
 		    	Utils.writeJSON(sb, Parameters.JSONFileName);
 				break;
-			case ListMetaData:
+			case ExtractDataset:
+				HashSet<Long> indexesToExtract = null;
+				HashSet<Long> stableIdsToExtract = null;
+				
+				// Check if valid dataset
+				if(!Parameters.iAnnot.startsWith("/matrix") && !Parameters.iAnnot.startsWith("/layers/")) new ErrorJSON("Dataset should be /matrix or starts with /layers/");
+				
+				// Loom to extract stable_id from
+				if(Parameters.indexes != null)
+				{
+					if(Parameters.loom_cell_stable_ids.equals(Parameters.loomFile)) 
+					{
+						indexesToExtract = new HashSet<Long>();
+						for(long l:Parameters.indexes) indexesToExtract.add(l);
+					}
+				}
+				
+				//TODO add a case with --stable-ids and same Loom?
+				// Read stable_ids to extract in other Loom file
+				if(indexesToExtract == null && (Parameters.indexes != null || Parameters.stable_ids != null)) 
+				{
+					loom = new LoomFile("r", Parameters.loom_cell_stable_ids);
+					if(!loom.exists("/col_attrs/_StableID")) new ErrorJSON("No StableID in this Loom file: " + Parameters.loom_cell_stable_ids);
+					cellStableIds = loom.readLongArray("/col_attrs/_StableID");
+					loom.close();
+					
+					stableIdsToExtract = new HashSet<Long>();
+					if(Parameters.indexes != null)
+					{
+						for(int i = 0 ; i < Parameters.indexes.length; i++) stableIdsToExtract.add(cellStableIds.get(Parameters.indexes[i]));
+					}
+					else if(Parameters.stable_ids != null)
+					{
+						for(int i = 0 ; i < Parameters.stable_ids.length; i++) stableIdsToExtract.add(Parameters.stable_ids[i]);
+					}
+				}
+				
+				// Loom to extract data from
+				loom = new LoomFile("r", Parameters.loomFile);
+
+				// First check the total dimension of the dataset to extract from
+				dim = loom.getDimensions(Parameters.iAnnot);
+				if(dim.length == 1) { loom.close(); new ErrorJSON("The dataset is not a matrix, it's an array. It should NOT BE THE CASE!"); }
+				nbGenes = dim[0];
+				nbCells = dim[1];
+				
+				// Find indexes to extract in new Loom file
+				if(indexesToExtract == null && stableIdsToExtract != null)
+				{
+					if(!loom.exists("/col_attrs/_StableID")) new ErrorJSON("No StableID in this Loom file: " + Parameters.loomFile);
+					cellStableIds = loom.readLongArray("/col_attrs/_StableID");
+					
+					indexesToExtract = new HashSet<Long>();
+					for(long i = 0 ; i < cellStableIds.size(); i++) 
+					{
+						long stable_id = cellStableIds.get(i);
+						if(stableIdsToExtract.contains(stable_id)) indexesToExtract.add(i);
+					}
+				}
+				
+				// All values
+				if(indexesToExtract == null)
+				{
+					indexesToExtract = new HashSet<Long>();
+					for(long i = 0; i < nbCells; i++) indexesToExtract.add(i);
+				}
+				
+				// Creating output string
+	    		sb = new StringBuilder(); // TODO don't create a StringBuilder, it takes too much space in RAM
+	    		
+				// If names to be added
+	    		StringArray64 rownames = null;
+	    		StringArray64 colnames = null;
+				if(Parameters.displayRowNames) rownames = loom.getGeneHGNC();
+				if(Parameters.displayColNames) colnames = loom.getCellNames();
+				
+				if(Parameters.outputType == OutputType.JSON) 
+				{
+					sb.append("{");
+					if(Parameters.displayRowNames)
+					{
+						sb.append("\"row_names\":[");
+						prefix = "";
+						for(String n:rownames)
+						{
+							sb.append(prefix).append("\"").append(n).append("\"");
+							prefix = ",";
+						}
+						sb.append("],");
+					}
+					if(Parameters.displayColNames)
+					{
+						sb.append("\"col_names\":[");
+						prefix = "";
+						for(String n:colnames)
+						{
+							sb.append(prefix).append("\"").append(n).append("\"");
+							prefix = ",";
+						}
+						sb.append("],");
+					}
+					sb.append("\"values\":[");
+				}
+				else
+				{
+					if(Parameters.displayColNames)
+					{
+						prefix = "";
+						for(String n:colnames)
+						{
+							sb.append(prefix).append(n);
+							prefix = ",";
+						}
+						sb.append("\n");
+					}
+				}
+
+    			// Load the whole thing in memory (not optimal MAN) // TODO don't....
+    			float[][] matrix = loom.readFloatMatrix(Parameters.iAnnot);
+    			prefix = "";
+    			for(long i = 0; i < matrix.length; i++) // genes
+				{
+					sb.append(prefix);
+					String prefix2 = "";
+					if(Parameters.outputType == OutputType.JSON) sb.append("[");
+					else if(Parameters.displayRowNames) 
+					{
+						sb.append(rownames.get(i));
+						prefix2 = ",";
+					}
+					for(long j = 0; j < matrix[(int)i].length; j++) // cells
+					{
+						if(indexesToExtract.contains(j))
+						{
+							sb.append(prefix2).append(Utils.format(matrix[(int)i][(int)j]));
+							prefix2 = ",";
+						}
+					}
+					if(Parameters.outputType == OutputType.JSON) 
+					{
+						sb.append("]");
+						prefix = ",";
+					}
+					else sb.append("\n");				
+				}
+	    		if(Parameters.outputType == OutputType.JSON) sb.append("]");
+				
+				// Close Handle
+				loom.close();
+				
+				// Writing results
+		    	if(Parameters.outputType == OutputType.JSON) Utils.writeJSON(sb, Parameters.outputFile);
+		    	else Utils.writePlain(sb, Parameters.outputFile);
+				break;
+			case ListMetadata:
 				// Get Metadata infos
 				loom = new LoomFile("r", Parameters.fileName);
-				sb = Metadata.toString(loom.listMetadata());
+				sb = new StringBuilder("{").append(Metadata.toString(loom.listMetadata())).append("}");
 				loom.close();
 				
 	    		// Writing results
 				Utils.writeJSON(sb, Parameters.JSONFileName);
 				break;
-			case ExtractMetaData:
+			case ExtractMetadata:
 				loom = new LoomFile("r", Parameters.loomFile);
 		
 				// Get all metadata to process
@@ -364,7 +627,8 @@ public class ASAP
 				{
 					// Extract metadata from Loom
 					Metadata metadata = loom.fillInfoMetadata(metaToExtract, true); // We could in principle simplify this part if we know already the data type / if we want to output the values / etc...
-					if(Parameters.metaName == null && Parameters.metatype != null) metadata.type = Parameters.metatype;
+					//if(Parameters.metaName != null && Parameters.metatype != null) metadata.type = Parameters.metatype;
+					if(Parameters.metatype != null) metadata.type = Parameters.metatype;
 					
 					sb.append(prefix);
 					
@@ -421,20 +685,33 @@ public class ASAP
 				Utils.writeJSON(sb, Parameters.JSONFileName);
 				break;
 			case RemoveMetaData:
+				// Check which metadata(s) to remove
+				if(Parameters.metaName != null) 
+				{
+					metapath = new String[1];
+					metapath[0] = Parameters.metaName;
+				}
+				else metapath = CopyMetaJSON.parseJSON(Parameters.JSONFileName);
+				
 				// Open in writing mode and remove the metadata
 				loom = new LoomFile("r+", Parameters.loomFile);
-				loom.removeMetadata(Parameters.metaName);
-				loom.close();
-
-				// Create output.json
-				Metadata meta = new Metadata(Parameters.metaName);
 				
-				// Create output String
-				sb = new StringBuilder();
-				meta.addMeta(sb, false, null, Long.MAX_VALUE);
+				// Go through metadata to remove
+				sb = new StringBuilder("{\"meta\":[");
+				prefix = "";
+				for(String metaToRemove:metapath) 
+				{
+					loom.removeMetadata(metaToRemove);
+					sb.append(prefix).append("\"").append(metaToRemove).append("\"");
+					prefix = ",";
+				}
+				sb.append("]}");
+
+				// Close Loom file
+				loom.close();
 				
 	    		// Writing results
-				Utils.writeJSON(sb, Parameters.outputFolder + "output.json");
+				Utils.writeJSON(sb, Parameters.outputFile);
 				break;
 			case CreateCellSelection:		
 				// Read Selected Cells in JSON
@@ -457,7 +734,7 @@ public class ASAP
 				HashMap<String, Long> cat = new HashMap<String, Long>();
 				cat.put("0", newMetadata.size() - selectedIndexes.length);
 				cat.put("1", (long)selectedIndexes.length);
-				meta = new Metadata(Parameters.metaName, Metatype.DISCRETE, MetaOn.CELL, newMetadata.size(), 1, cat);
+				Metadata meta = new Metadata(Parameters.metaName, Metatype.DISCRETE, MetaOn.CELL, newMetadata.size(), 1, cat);
 				
 				// Create output String
 				sb = new StringBuilder();
@@ -470,6 +747,53 @@ public class ASAP
 				LoomFile loomFrom = new LoomFile("r", Parameters.loomFile);
 				LoomFile loomTo = new LoomFile("r+", Parameters.loomFile2);
 
+				// Checking dimensions of the files (in case the To file is smaller than the From file)
+				long[] dimFrom = loomFrom.getDimensions();
+				long[] dimTo = loomTo.getDimensions();
+				HashSet<Long> geneIndexesToFilter = null;
+				HashSet<Long> cellIndexesToFilter = null;
+				if(dimFrom[0] < dimTo[0] || dimFrom[1] < dimTo[1]) new ErrorJSON("Cannot copy from a filtered dataset to a non-filtered one");
+				if(dimFrom[0] > dimTo[0]) // Gene Filtering
+				{
+					LongArray64 stable_ids_from = loomFrom.readLongArray("/row_attrs/_StableID");
+					LongArray64 stable_ids_to = loomTo.readLongArray("/row_attrs/_StableID");
+					geneIndexesToFilter = new HashSet<Long>();
+					long j = 0;
+					for(long i = 0; i < stable_ids_to.size(); i ++) // I assume they are sorted... hopefully it is always the case
+					{
+						long s_to = stable_ids_to.get(i);
+						long s_from = stable_ids_from.get(j);
+						while(s_from != s_to) 
+						{
+							geneIndexesToFilter.add(j);
+							s_from = stable_ids_from.get(++j);
+						}
+						j++;
+					}
+					while(j < stable_ids_from.size()) geneIndexesToFilter.add(j++);
+					if(geneIndexesToFilter.size() != (stable_ids_from.size() - stable_ids_to.size())) new ErrorJSON("Could not find all gene stable_ids...");
+				}
+				if(dimFrom[1] > dimTo[1]) // Cell Filtering
+				{
+					LongArray64 stable_ids_from = loomFrom.readLongArray("/col_attrs/_StableID");
+					LongArray64 stable_ids_to = loomTo.readLongArray("/col_attrs/_StableID");
+					cellIndexesToFilter = new HashSet<Long>();
+					long j = 0;
+					for(long i = 0; i < stable_ids_to.size(); i ++) // I assume they are sorted... hopefully it is always the case
+					{
+						long s_to = stable_ids_to.get(i);
+						long s_from = stable_ids_from.get(j);
+						while(s_from != s_to) 
+						{
+							cellIndexesToFilter.add(j);
+							s_from = stable_ids_from.get(++j);
+						}
+						j++;
+					}
+					while(j < stable_ids_from.size()) cellIndexesToFilter.add(++j);
+					if(cellIndexesToFilter.size() != (stable_ids_from.size() - stable_ids_to.size())) new ErrorJSON("Could not find all cell stable_ids...");
+				}
+				
 				if(Parameters.metaName != null) 
 				{
 					metapath = new String[1];
@@ -482,7 +806,7 @@ public class ASAP
 				prefix = "";
 				for(String metaToCopy:metapath) 
 				{
-					if(LoomFile.copyMetadata(metaToCopy, loomFrom, loomTo))
+					if(LoomFile.copyMetadata(metaToCopy, geneIndexesToFilter, cellIndexesToFilter, loomFrom, loomTo))
 					{
 						sb.append(prefix).append("\"").append(metaToCopy).append("\"");
 						prefix = ",";
@@ -504,10 +828,10 @@ public class ASAP
 				new ErrorJSON("Not implemented yet");
 				//RegenerateNewOrganism.regenerateJSON();
 				break;
-			case FilterCells: 
+			case FilterCols: 
 				FileFilter.filterCells();
 				break;
-			case FilterGenes: 
+			case FilterRows: 
 				FileFilter.filterGenes();
 				break;
 			case FilterDEMetadata:
@@ -530,34 +854,13 @@ public class ASAP
 				{
 					case "-T":
 						i++;
-						String mode = args[i];
-						switch(mode)
+						try
 						{
-							case "CreateKeggDB": m = Mode.CreateKeggDB; break;
-							case "CreateGODB": m = Mode.CreateGODB; break;
-							case "Enrichment": m = Mode.Enrichment; break;
-							case "Parsing": m = Mode.Parsing; break;
-							case "Preparsing": m = Mode.Preparsing; break;
-							case "DimensionReduction": m = Mode.DimensionReduction; break;
-							case "Normalization": m = Mode.Normalization; break;
-							case "Scaling": m = Mode.Scaling; break;
-							case "UpdateEnsemblDB": m = Mode.UpdateEnsemblDB; break;
-							case "RegenerateNewOrganism": m = Mode.RegenerateNewOrganism; break;
-							case "ExtractRow": m = Mode.ExtractRow; break;
-							case "ExtractCol": m = Mode.ExtractCol; break;
-							case "ListMetadata": m = Mode.ListMetaData; break;
-							case "ExtractMetadata": m = Mode.ExtractMetaData; break;
-							case "MatchValues": m = Mode.MatchValues; break;
-							case "RemoveMetaData": m = Mode.RemoveMetaData; break;
-							case "CopyMetaData": m = Mode.CopyMetaData; break;
-							case "CreateCellSelection": m = Mode.CreateCellSelection; break;
-							case "PreparseMetadata": m = Mode.PreparseMetadata; break;
-							case "ParseMetadata": m = Mode.ParseMetadata; break;
-							case "FilterCols": m = Mode.FilterCells; break;
-							case "FilterRows": m = Mode.FilterGenes; break;
-							case "FilterDEMetadata": m = Mode.FilterDEMetadata; break;
-							case "DifferentialExpression": m = Mode.DifferentialExpression; break;
-							default: System.err.println("Mode (-T) " + mode + " does not exist!"); System.out.println("-T %s \t\tMode to run ASAP [Preparsing, Parsing, PreparseMetadata, CreateCellSelection, ParseMetadata, RegenerateOutput, CreateKeggDB, CreateGODB, DifferentialExpression, Normalization, Scaling, UpdateEnsemblDB, Enrichment, ExtractRow, ExtractCol, ListMetadata, ExtractMetadata, MatchValues, RemoveMetaData, CopyMetaData, FilterCols, FilterRows, FilterDEMetadata]."); System.exit(-1);
+							m = Mode.valueOf(args[i]);
+						}
+						catch(IllegalArgumentException iae)
+						{
+							new ErrorJSON("This mode (-T) '" + args[i] + "' does not exist. Please select in " + Mode.toArrayString());
 						}
 						break;
 					default:
@@ -569,7 +872,7 @@ public class ASAP
 		if(m == null || args.length < 2)
 		{
 			System.out.println("Argument -T is mandatory:");
-			System.out.println("-T %s \t\tMode to run ASAP [Preparsing, Parsing, PreparseMetadata, CreateCellSelection, ParseMetadata, RegenerateOutput, CreateKeggDB, CreateGODB, DifferentialExpression, Normalization, Scaling, UpdateEnsemblDB, Enrichment, ExtractRow, ExtractCol, ListMetadata, ExtractMetadata, MatchValues, RemoveMetaData, CopyMetaData, FilterCols, FilterRows, FilterDEMetadata].");
+			System.out.println("-T %s \t\tMode to run ASAP. Please select in " + Mode.toArrayString());
 			System.exit(-1);
 		}
 		return args2;

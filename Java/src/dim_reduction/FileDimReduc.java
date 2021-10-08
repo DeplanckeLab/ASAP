@@ -54,17 +54,7 @@ public class FileDimReduc
         }
         dimReducJSON.writeJSON();
     }
-    
-   /* public static void readHeader(String header) throws IOException
-    {
-    	String[] cells = header.split("\t");
-    	filtJSON.nber_cells = cells.length - 1; // Should be
-    	if(filtJSON.nber_cells != parsJSON.nber_cells) new ErrorJSON("Detected different number of cells between parsingJSON("+parsJSON.nber_cells+") and Header("+filtJSON.nber_cells+")");
-    	bw.write(header + "\n");
-    	cellNames = new String[filtJSON.nber_cells];
-    	for(int i = 1; i < cells.length; i++) cellNames[i-1] = cells[i];
-    }*/
-    
+       
     public static void reduceTSNE() throws IOException
     {
     	// Analysis
@@ -103,51 +93,4 @@ public class FileDimReduc
     	}
        	br.close();*/
     }
-
-    /*public static double[][] getStatsOnFile(boolean getdataset) throws IOException
-    {
-    	BufferedReader br = new BufferedReader(new FileReader(Parameters.fileName));
-    	String line = br.readLine(); // header
-    	readHeader(line);
-    	double [][] dataset = null;
-    	if(Parameters.nbCellsDetected > filtJSON.nber_cells) new ErrorJSON("'Min Detected' should be smaller than the total number of cells/samples i.e. <=" + filtJSON.nber_cells);
-    	if(getdataset) dataset = new double[filtJSON.nber_cells][parsJSON.nber_genes];
-    	geneNames = new String[parsJSON.nber_genes];
-    	colSum = new double[filtJSON.nber_cells];
-    	rowSum = new double[parsJSON.nber_genes];
-    	rowVar = new double[parsJSON.nber_genes];
-    	rowCoeffOfVar = new double[parsJSON.nber_genes];
-    	loggeomeans = new double[parsJSON.nber_genes]; // scLVM
-    	sizeFactors = new double[filtJSON.nber_cells]; // scLVM
-    	int nbGenes = 0;
-    	line = br.readLine();
-    	while(line != null)
-    	{
-    		String[] tokens = line.split("\t");
-    		double mean = 0;
-    	    double M2 = 0;
-    		geneNames[nbGenes] = tokens[0];
-     		for(int i = 1; i < tokens.length; i++)
-    		{
-    			double val = Double.parseDouble(tokens[i]);
-    			double delta = val - mean;
-    			mean = mean + delta/i;
-    			M2 = M2 + delta*(val - mean);
-    			colSum[i-1] += val;
-    			rowSum[nbGenes] += val;
-    			loggeomeans[nbGenes] += Math.log(val);
-    			if(getdataset) dataset[i-1][nbGenes] = val;
-    		}
-    		loggeomeans[nbGenes] /= (tokens.length - 1);
-    		rowVar[nbGenes] = M2 / (tokens.length - 2);
-    		if(mean == 0) rowCoeffOfVar[nbGenes] = 0;
-    		else rowCoeffOfVar[nbGenes] = Math.sqrt(rowVar[nbGenes]) / mean;
-    		nbGenes++;
-            line = br.readLine();
-        }
-    	br.close();
-    	filtJSON.nber_genes = nbGenes;
-    	if(filtJSON.nber_genes != parsJSON.nber_genes) new ErrorJSON("Detected different number of genes between parsingJSON("+parsJSON.nber_genes+") and Data Matrix("+filtJSON.nber_genes+")");
-    	return dataset;
-    }*/
 }

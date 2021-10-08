@@ -8,8 +8,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 
-import enrichment.GeneSet;
 import json.ErrorJSON;
+import model.GeneSet;
 import model.MapGene;
 import parsing.model.Gene;
 
@@ -30,18 +30,14 @@ public class DBManager
 			
 			ResultSet rs = stmt.executeQuery(sql);
 			
-			
-			int c = 0;
 			// List the results
 			while(rs.next())
 			{
-				c++;
 				int taxId = rs.getInt("tax_id");
 				int id = rs.getInt("id");
 				taxToIdMap.put(taxId, id);
 			}
 
-			System.out.println(c);
 			stmt.close();
 
 			return taxToIdMap;
@@ -121,7 +117,46 @@ public class DBManager
 			catch(SQLException se2){ }// nothing we can do
 		}
 	}
-				
+	
+	public static GeneSet getUniqueGeneSet(int id)
+	{
+		GeneSet res = null;
+		Statement stmt = null;
+		try
+		{	
+			stmt = conn.createStatement();
+			String sql = "SELECT name,identifier,content,gene_set_id FROM gene_set_items WHERE id="+id;
+			ResultSet rs = stmt.executeQuery(sql);
+			
+			// I go through the results
+			while(rs.next())
+			{
+				res = new GeneSet();
+				res.name = rs.getString("name");
+				res.identifier = rs.getString("identifier");
+				res.gene_set_id = rs.getInt("gene_set_id");
+				String[] ids = rs.getString("content").split(",");
+				res.content = new HashSet<Long>();
+				for(int i = 0;i < ids.length; i++) if(!ids[i].equals("")) res.content.add(Long.parseLong(ids[i])); // They all should be Long
+			}
+			
+			stmt.close();
+		}
+		catch(Exception e)
+		{
+			e.printStackTrace();
+		}
+		finally
+		{
+			try
+			{
+				if(stmt!=null) stmt.close();
+			}
+			catch(SQLException se2){ }// nothing we can do
+		}
+		return res;
+	}
+	
 	public static ArrayList<GeneSet> getGeneSets(int geneset_id) 
 	{
 		ArrayList<GeneSet> res = new ArrayList<GeneSet>();
@@ -607,17 +642,23 @@ public class DBManager
 				g.latest_ensembl_release = rs.getInt("latest_ensembl_release");
 				
 				// I add this gene in the HashMap. By ensembl_id ...
-				ArrayList<Gene> gene_list = MapGene.ensembl_db.get(g.ensembl_id.toUpperCase());
-				if(gene_list == null) gene_list = new ArrayList<>();
-				gene_list.add(g);
-				MapGene.ensembl_db.put(g.ensembl_id.toUpperCase(), gene_list);
+				if(g.ensembl_id != null)
+				{
+					ArrayList<Gene> gene_list = MapGene.ensembl_db.get(g.ensembl_id.toUpperCase());
+					if(gene_list == null) gene_list = new ArrayList<>();
+					gene_list.add(g);
+					MapGene.ensembl_db.put(g.ensembl_id.toUpperCase(), gene_list);
+				}
 				
 				// ... and once the gene name
-				gene_list = MapGene.gene_db.get(g.name.toUpperCase());
-				if(gene_list == null) gene_list = new ArrayList<>();
-				gene_list.add(g);
-				MapGene.gene_db.put(g.name.toUpperCase(), gene_list);
-					
+				if(g.name != null)
+				{
+					ArrayList<Gene> gene_list = MapGene.gene_db.get(g.name.toUpperCase());
+					if(gene_list == null) gene_list = new ArrayList<>();
+					gene_list.add(g);
+					MapGene.gene_db.put(g.name.toUpperCase(), gene_list);
+				}
+				
 				// ... and for every alt names
 				String alt_names = rs.getString("alt_names");
 				if(alt_names != null)
@@ -626,7 +667,7 @@ public class DBManager
 					for(String gene:tokens)
 					{
 						g.alt_names.add(gene);
-						gene_list = MapGene.alt_db.get(gene.toUpperCase());
+						ArrayList<Gene> gene_list = MapGene.alt_db.get(gene.toUpperCase());
 						if(gene_list == null) gene_list = new ArrayList<>();
 						gene_list.add(g);
 						MapGene.alt_db.put(gene.toUpperCase(), gene_list);
@@ -640,7 +681,7 @@ public class DBManager
 					String[] tokens = obsolete_alt_names.split(",");
 					for(String gene:tokens)
 					{
-						gene_list = MapGene.obsolete_db.get(gene.toUpperCase());
+						ArrayList<Gene> gene_list = MapGene.obsolete_db.get(gene.toUpperCase());
 						if(gene_list == null) gene_list = new ArrayList<>();
 						gene_list.add(g);
 						MapGene.obsolete_db.put(gene.toUpperCase(), gene_list);

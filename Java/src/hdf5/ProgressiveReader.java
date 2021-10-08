@@ -39,7 +39,7 @@ public class ProgressiveReader
 		
 		// How many blocks to process?
 		this.nbTotalBlocks = (int)Math.ceil((double)this.nbCells / blockSizeX);
-		System.out.println("Writing & Parsing " + nbTotalBlocks + " independent blocks");
+		//System.out.println("Writing & Parsing " + nbTotalBlocks + " independent blocks");
 	}
 	
 	private LongArray64 readLong(String path)

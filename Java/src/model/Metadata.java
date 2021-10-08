@@ -12,14 +12,17 @@ public class Metadata
 	public String path;
 	public Metatype type;
 	public MetaOn on;
+	public long missingValues = 0;
 	public HashSet<String> categories;
 	public HashMap<String, Long> categoriesMap;
 	public StringArray64 values = null;
 	public String[][] matrixValues = null; // TODO handle this if big?
 	public String value = null; // in case of single value
+	public int nbCat = -1;
 	public long nbcol = -1;
 	public long nbrow = -1;
 	public long size = -1;
+	public boolean stringWasCorrected = false;
 	
 	public Metadata()
 	{
@@ -73,6 +76,7 @@ public class Metadata
 	public boolean isCategorical(long length) // Hard to find some kind of threshold for this
 	{
 		if(this.categories == null) return false;
+		if(this.categories.size() > 500) return false;
 		return this.categories.size() <= length * 0.10;
 	}
 	
@@ -85,22 +89,29 @@ public class Metadata
 		for(long i = 0; i < this.values.size(); i++)
 		{
 			String v = this.values.get(i);
+			if(!this.stringWasCorrected) v = Utils.handleSpecialCharacters(v);
 			if(isNumeric) // Check if numeric
 			{
 				try
 				{
-					Float.parseFloat(v);
+					Float.parseFloat(v.replaceAll(",", "."));
 				}
 				catch(NumberFormatException nfe)
 				{
 					isNumeric = false;
 				}
 			}
+			
 			boolean added = this.categories.add(v);
-			if(added) this.categoriesMap.put(v, 1L);
-			else this.categoriesMap.put(v, this.categoriesMap.get(v) + 1);
-			if(!isCategorical()) break; // To alleviate the calculations/ Map size
+			if(isCategorical()) // If this is stil true, we populate the categoriesMap
+			{
+				if(added) this.categoriesMap.put(v, 1L);
+				else this.categoriesMap.put(v, this.categoriesMap.get(v) + 1);
+			}
+			// else break; // To alleviate the calculations/ Map size
 		}
+		this.stringWasCorrected = true;
+		this.nbCat = this.categories.size();
 		if(isCategorical()) this.type = Metatype.DISCRETE;
 		else
 		{
@@ -170,6 +181,8 @@ public class Metadata
 		if(this.nbcol != -1) sb.append(",\"nber_cols\":").append(this.nbcol);
 		if(this.nbrow != -1) sb.append(",\"nber_rows\":").append(this.nbrow);	
 		if(this.size != -1) sb.append(",\"dataset_size\":").append(this.size);
+		if(this.nbCat != -1) sb.append(",\"distinct_values\":").append(this.nbCat);
+		if(this.missingValues != 0) sb.append(",\"missing_values\":").append(this.missingValues);
 		
 		if(this.type == Metatype.DISCRETE)
 		{	
@@ -181,7 +194,7 @@ public class Metadata
 				{
 					sb.append(prefix);
 					prefix = ",\"";
-					sb.append(cat).append("\":").append(this.categoriesMap.get(cat));
+					sb.append(cat).append("\":").append(this.categoriesMap.get(cat)); // Supposed that cat is already corrected when read
 				}
 				sb.append("}");
 			}
@@ -207,7 +220,12 @@ public class Metadata
 				if(this.type == Metatype.STRING) sb.append("\"");
 				String val = this.value;
 				if(this.type == Metatype.NUMERIC) val = Utils.format(val);
-				sb.append(val);
+				if(this.type == Metatype.STRING) 
+				{
+					if(this.stringWasCorrected) sb.append(val);
+					else sb.append(Utils.handleSpecialCharacters(val));
+				}
+				else sb.append(val);
 				if(this.type == Metatype.STRING) sb.append("\"");
 			}
 			else if(this.values != null) // If vector
@@ -218,13 +236,26 @@ public class Metadata
 				
 				for(long i = 0; i < this.values.size(); i++)
 				{
-					String val = this.values.get(i);
-					if(this.type == Metatype.NUMERIC) val = Utils.format(val);
-					sb.append(prefix).append(val);
-					if(this.type != Metatype.NUMERIC) prefix = "\",\"";
-					else prefix = ",";
-					cnt++;
-					if(cnt >= max_nb_values) break;
+					try
+					{
+						String val = this.values.get(i);
+						if(this.type == Metatype.NUMERIC) val = Utils.format(val);
+						if(this.type == Metatype.STRING) 
+						{
+							sb.append(prefix);
+							if(this.stringWasCorrected) sb.append(val);
+							else sb.append(Utils.handleSpecialCharacters(val));
+						}
+						else sb.append(prefix).append(val);
+						if(this.type != Metatype.NUMERIC) prefix = "\",\"";
+						else prefix = ",";
+						cnt++;
+						if(cnt >= max_nb_values) break;
+					}
+					catch(Exception e)
+					{
+						e.printStackTrace();
+					}
 				}
 				
 				if(this.type != Metatype.NUMERIC) sb.append("\"");
@@ -245,7 +276,13 @@ public class Metadata
 	    			{
 	    				String val = this.matrixValues[i][j];
 	    				if(this.type == Metatype.NUMERIC) val = Utils.format(val);
-	    				sb.append(prefix).append(val);
+						if(this.type == Metatype.STRING) 
+						{
+							sb.append(prefix);
+							if(this.stringWasCorrected) sb.append(val);
+							else sb.append(Utils.handleSpecialCharacters(val));
+						}
+	    				else sb.append(prefix).append(val);
 	    				if(this.type != Metatype.NUMERIC) prefix = "\",\"";
 	    				else prefix = ",";
 	    				cnt_x++;

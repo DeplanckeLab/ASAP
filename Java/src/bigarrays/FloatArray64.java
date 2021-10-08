@@ -26,10 +26,16 @@ public class FloatArray64
             if(remainder != 0) data[chunks] = new float[remainder];
         }
     }
-    
+       
     public static int chunkSize()
     {
     	return CHUNK_SIZE;
+    }
+    
+    public float[] toArray()
+    {
+    	if(this.data.length == 1) return this.data[0];
+    	return null;
     }
     
     public float get(long index) 
@@ -63,5 +69,12 @@ public class FloatArray64
     public long size() 
     {
         return this.size;
+    }
+    
+    public IntArray64 toIntArray()
+    {
+    	IntArray64 array = new IntArray64(this.size);
+    	for(long i = 0; i < size; i++) array.set(i, (int)this.get(i));
+    	return array;
     }
 }

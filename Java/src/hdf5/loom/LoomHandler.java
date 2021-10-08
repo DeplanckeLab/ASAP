@@ -37,12 +37,30 @@ public class LoomHandler
 	    	{
 	    		g.cellNames = reader.string().readArrayBlock("/col_attrs/CellID", 10, 0);
 	    		for (int i = 0; i < g.cellNames.length; i++) g.cellNames[i] = g.cellNames[i].trim().replaceAll("\"", "");
+	    	} 
+	    	else
+	    	{
+	    		g.cellNames = new String[10];
+	    		for (int i = 0; i < g.cellNames.length; i++) g.cellNames[i] = "Cell_" + (i + 1);
 	    	}
+	    	
 	    	if(reader.exists("/row_attrs/Gene")) 
 	    	{
 	    		g.geneNames = reader.string().readArrayBlock("/row_attrs/Gene", 10, 0);
 	    		for (int i = 0; i < g.geneNames.length; i++) g.geneNames[i] = g.geneNames[i].trim().replaceAll("\"", "");
 	    	}
+	    	else if(reader.exists("/row_attrs/Accession")) 
+	    	{
+	    		g.geneNames = reader.string().readArrayBlock("/row_attrs/Accession", 10, 0);
+	    		for (int i = 0; i < g.geneNames.length; i++) g.geneNames[i] = g.geneNames[i].trim().replaceAll("\"", "");
+
+	    	}
+	    	else
+	    	{
+	    		g.geneNames = new String[10];
+	    		for (int i = 0; i < g.geneNames.length; i++) g.geneNames[i] = "Gene_" + (i + 1);
+	    	}
+	    	
 	    	// List Metadata
 			List<String> m = reader.getGroupMembers("/row_attrs");
 			for(String mem:m) if(!reader.isGroup("/row_attrs/" + mem)) g.additionalMetadataPath.add("/row_attrs/" + mem);
@@ -89,10 +107,19 @@ public class LoomHandler
 	    	else for(int i = 0; i < json.data.cell_names.size(); i++) json.data.cell_names.set(i, "Cell_"+(i+1)); // Create fake names if none exist
 	    	
 	    	// Process Gene names
-	    	if(loom.exists("/row_attrs/Accession")) json.data.ens_names = loom.readStringArray("/row_attrs/Accession"); // EnsemblIDs
+	    	if(loom.exists("/row_attrs/Accession")) 
+	    	{
+	    		json.data.ens_names = loom.readStringArray("/row_attrs/Accession"); // EnsemblIDs
+	    		json.data.original_gene_names = json.data.ens_names.copy();
+	    	}
 	    	else json.data.ens_names = new StringArray64(json.data.nber_genes); // After checking the database, this is filled appropriately
-	    	if(loom.exists("/row_attrs/Gene")) json.data.gene_names = loom.readStringArray("/row_attrs/Gene"); // HGNC names
+	    	if(loom.exists("/row_attrs/Gene")) 
+	    	{
+	    		json.data.gene_names = loom.readStringArray("/row_attrs/Gene"); // HGNC names
+	    		json.data.original_gene_names = json.data.gene_names.copy(); // I replace if there was an Ensembl before
+	    	}
 	    	else json.data.gene_names = new StringArray64(json.data.nber_genes); // After checking the database, this is filled appropriately
+	    	if(json.data.original_gene_names == null) json.data.original_gene_names = new StringArray64(json.data.nber_genes); // In case there is nothing...
 	    	MapGene.parseGenes(json.data);
 	
 	    	// Original file block sizes is kept (easier to perform the copy)

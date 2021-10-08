@@ -21,6 +21,7 @@ public class LoomData
 	public long nber_zeros = 0;
 	
 	// Main dataset
+	public StringArray64 original_gene_names = null; // Not initialized by default
 	public StringArray64 gene_names = null; // Not initialized by default
 	public StringArray64 ens_names = null; // Not initialized by default
 	public StringArray64 cell_names;

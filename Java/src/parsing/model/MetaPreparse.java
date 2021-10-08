@@ -17,32 +17,34 @@ public class MetaPreparse
 	public HashSet<String> not_found;
 	public HashSet<String> ambiguous;
 	public HashMap<Integer, Metadata> metaIndex;
+	public HashMap<Integer, Integer> metaIndexMatchParam;
 	
 	public MetaPreparse(String name) 
 	{
 		this.name = name;
 	}
 	
-	/*
-	@override
 	public String toString() 
 	{
 		StringBuilder sb = new StringBuilder();
 		sb.append("\"metadata\":\"").append(this.name).append("\"");
-		if(cellNames != null) sb.append(",\"nber_cols\":").append(cellNames.length);
+		if(cellNames != null) sb.append(",\"nber_cols\":").append(cellNames.size());
 		if(geneNames != null) sb.append(",\"nber_rows\":").append(geneNames.length); 
 		if(this.geneNames != null && this.geneNames.length != 0) 
 		{ 
 			sb.append(",\"genes\":[");
 			String prefixT = "";
+			int cnt = 0;
 			for(Gene gene:this.geneNames) 
 			{
+				if(cnt == 10) break;
 				sb.append(prefixT).append("\"").append((gene.ensembl_id == null)?gene.name:gene.ensembl_id).append("\"");
 				prefixT = ",";
+				cnt++;
 			}
 			sb.append("]");
 		}
-		if(this.cellNames != null && this.cellNames.length != 0) 
+		if(this.cellNames != null && this.cellNames.size() != 0) 
 		{ 
 			sb.append(",\"cells\":[");
 			String prefixT = "";
@@ -78,9 +80,35 @@ public class MetaPreparse
 			}
 			sb.append("]");
 		}
-		sb.append(",").append(toString(metaIndex.values()));
+		
+		// Check empty metadatas
+		sb.append(",\"empty_metadata\":[");
+		String prefixT = "";
+		for(Metadata me:metaIndex.values())
+		{
+			if(me.categories != null)
+			{
+				if(me.categories.size() == 1 && me.categories.iterator().next().equals(""))
+				{
+					sb.append(prefixT).append("\"").append(me.path).append("\"");
+					prefixT = ",";
+				}
+			}
+			else if(me.categoriesMap != null)
+			{
+				if(me.categoriesMap.size() == 1 && me.categoriesMap.containsKey(""))
+				{
+					sb.append(prefixT).append("\"").append(me.path).append("\"");
+					prefixT = ",";
+				}
+			}
+		}
+		sb.append("]");
+		
+		// Now add all metadata
+		sb.append(",").append(Metadata.toString(metaIndex.values()));
     	return sb.toString();
-	}*/
+	}
 	
 	
 }

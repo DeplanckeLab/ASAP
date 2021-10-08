@@ -8,7 +8,7 @@ import java.util.ArrayList;
 import model.Parameters;
 import parsing.model.FileType;
 import parsing.model.GroupPreparse;
-import parsing.model.MetaPreparse;
+import tools.Utils;
 
 public class PreparsingJSON
 {
@@ -23,7 +23,7 @@ public class PreparsingJSON
 	    sb.append("{\"detected_format\":\"").append(Parameters.fileType).append("\",");
 	    if(Parameters.fileType == FileType.LOOM) sb.append("\"loom_version\":\"").append(Parameters.loomVersion).append("\",");
     	sb.append("\"list_groups\":").append(toString(groups)).append("}");
-	    
+    	
         // Write output JSON
         try
         {      	
@@ -36,33 +36,7 @@ public class PreparsingJSON
     		new ErrorJSON(ioe.getMessage());
     	}
     }
-	
-    /**
-     * Only when preparsing Metadata
-     * 
-     * @param files
-     */
-    public static void writeOutputJSON(MetaPreparse meta)
-    {
-    	// Prepare String
-    	StringBuilder sb = new StringBuilder();
-	    sb.append("{\"detected_format\":\"").append(Parameters.fileType).append("\",");
-	    if(Parameters.fileType == FileType.LOOM) sb.append("\"loom_version\":\"").append(Parameters.loomVersion).append("\",");
-    	sb.append(meta).append("}");
-	    
-        // Write output JSON
-        try
-        {      	
-    		BufferedWriter bw = new BufferedWriter(new FileWriter(Parameters.outputFolder + "output.json"));
-        	bw.write(sb.toString());
-        	bw.close();
-    	}
-    	catch(IOException ioe)
-    	{
-    		new ErrorJSON(ioe.getMessage());
-    	}
-    }
-        
+	       
     /**
      * If archive containing multiple files
      * First: Just list the files
@@ -99,7 +73,7 @@ public class PreparsingJSON
      	
    	public static String toString(ArrayList<GroupPreparse> stuff)
    	{
-   		StringBuffer sb = new StringBuffer("[");
+   		StringBuilder sb = new StringBuilder("[");
    		String prefix0 = "";
    		for(GroupPreparse g:stuff)
     	{
@@ -108,14 +82,14 @@ public class PreparsingJSON
     		{ 
     			sb.append(",\"genes\":[");
     			String prefix = "";
-    			for(String gene:g.geneNames) { sb.append(prefix).append("\"").append(gene).append("\""); prefix = ","; }
+    			for(String gene:g.geneNames) { sb.append(prefix).append("\"").append(Utils.handleSpecialCharacters(gene)).append("\""); prefix = ","; }
     			sb.append("]");
     		}
     		if(g.cellNames != null && g.cellNames.length != 0) 
     		{ 
     			sb.append(",\"cells\":[");
     			String prefix = "";
-    			for(String cell:g.cellNames) { sb.append(prefix).append("\"").append(cell).append("\""); prefix = ","; }
+    			for(String cell:g.cellNames) { sb.append(prefix).append("\"").append(Utils.handleSpecialCharacters(cell)).append("\""); prefix = ","; }
     			sb.append("]");
     		}
     		if(g.matrix != null)
@@ -136,7 +110,7 @@ public class PreparsingJSON
     		{
     			sb.append(",\"existing_metadata\":[");
     			String prefix = "";
-    			for(String meta:g.additionalMetadataPath) { sb.append(prefix).append("\"").append(meta).append("\""); prefix = ","; }
+    			for(String meta:g.additionalMetadataPath) { sb.append(prefix).append("\"").append(Utils.handleSpecialCharacters(meta)).append("\""); prefix = ","; }
     			sb.append("]");
     		}
     		sb.append("}");

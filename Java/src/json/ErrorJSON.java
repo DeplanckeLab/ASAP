@@ -4,6 +4,7 @@ import java.io.BufferedWriter;
 import java.io.FileWriter;
 import java.io.IOException;
 
+import hdf5.loom.LoomFile;
 import model.Parameters;
 
 public class ErrorJSON 
@@ -12,8 +13,9 @@ public class ErrorJSON
 	
 	public ErrorJSON(String errorMessage, String path) 
 	{
+		LoomFile.close_all();
 		this.displayed_error = errorMessage;
-		writeJSON(path);
+		if(path != null) writeJSON(path);
 		System.err.println(this.displayed_error);
 		System.exit(-1);
 	}

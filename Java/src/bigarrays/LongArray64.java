@@ -1,12 +1,14 @@
 package bigarrays;
 
+import java.util.Iterator;
+
 /**
  *  @author vincent.gardeux@epfl.ch
  *
  * Class for representing a long static array requiring address space larger than 32 bits. 
  */
 
-public class LongArray64 
+public class LongArray64 implements Iterable<Long>
 {
 	private static final int CHUNK_SIZE = 1024*1024*1024; //1GiB
 
@@ -63,5 +65,28 @@ public class LongArray64
     public long size() 
     {
         return this.size;
+    }
+    
+	@Override
+	public Iterator<Long> iterator() 
+	{
+		return new LongArray64Iterator();
+	}
+	
+	private class LongArray64Iterator implements Iterator<Long>
+	{
+        private long position = 0;
+ 
+        public boolean hasNext() 
+        {
+            if (position < size) return true;
+            return false;
+        }
+ 
+        public Long next() 
+        {
+            if(this.hasNext()) return get(position++);
+            return null;
+        }
     }
 }

@@ -1,3 +1,47 @@
 package model;
 
-public enum Mode{Preparsing, Parsing, PreparseMetadata, ParseMetadata, RegenerateNewOrganism, CreateCellSelection, CreateGODB, CreateKeggDB, DifferentialExpression, Normalization, Scaling, UpdateEnsemblDB, Enrichment, DimensionReduction, ExtractRow, ExtractCol, ListMetaData, ExtractMetaData, MatchValues, RemoveMetaData, CopyMetaData, FilterCells, FilterGenes, FilterDEMetadata}
+public enum Mode
+{
+	Preparsing,
+	Parsing,
+	PreparseMetadata,
+	ParseMetadata,
+	RegenerateNewOrganism,
+	CreateCellSelection,
+	CreateGODB,
+	CreateKeggDB,
+	DifferentialExpression,
+	Normalization,
+	Scaling,
+	UpdateEnsemblDB,
+	Enrichment,
+	ModuleScore,
+	DimensionReduction,
+	ExtractRow,
+	ExtractCol,
+	ExtractDataset,
+	ListMetadata,
+	ExtractMetadata,
+	MatchValues,
+	RemoveMetaData,
+	CopyMetaData,
+	FilterCols,
+	FilterRows,
+	FilterDEMetadata;
+	
+	public static String toArrayString()
+	{
+		StringBuffer sb = new StringBuffer("[");
+		String prefix = "";
+		for(Mode m:Mode.values())
+		{
+			sb.append(prefix).append(m.toString());
+			prefix = ", ";
+		}
+		sb.append("]");
+		return sb.toString();
+	}
+	
+
+
+}

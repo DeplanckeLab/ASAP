@@ -11,49 +11,17 @@ import hdf5.loom.LoomFile;
 import jsc.contingencytables.ContingencyTable2x2;
 import jsc.contingencytables.FishersExactTest;
 import json.ErrorJSON;
+import model.GeneSet;
 import model.Parameters;
 import tools.Utils;
 
 public class Enrichment 
 {
-	/*public static void readFiles()
-	{
-		long t1 = System.currentTimeMillis();
-		
-		// Load Background Genes
-		if(!Parameters.isSilent) System.out.println("Reading the Background file...");
-		loadBackgroundGenes(Parameters.backgroundFile);
-		if(!Parameters.isSilent) System.out.println("Background file provided: "+backgroundGenes.size()+" IDs are found.");
-		
-		// Load Gene-Pathway mapping
-		if(!Parameters.isSilent) System.out.println("Reading the Gene-Pathway mapping file...");
-		loadDataPathways(Parameters.pathwayFile);
-		if(!Parameters.isSilent) System.out.println("Pathway Map provided: "+data_pathways.keySet().size()+" pathways.");
-		String[] copy = backgroundGenes.keySet().toArray(new String[backgroundGenes.size()]);
-		for(String gene:copy) // Remove extra genes and put back false to extra genes
-		{
-			if(backgroundGenes.get(gene) == false) backgroundGenes.remove(gene);
-			else backgroundGenes.put(gene, false);
-		}
-		if(!Parameters.isSilent) System.out.println("Background file provided: "+backgroundGenes.size()+" IDs are remaining.");
-		
-		// Load Genes to Enrich
-		if(!Parameters.isSilent) System.out.println("Reading the Gene list to enrich [JSON]...");
-		loadGeneListJSON(Parameters.listGenesFile);
-		if(!Parameters.isSilent) System.out.println("Gene list to enrich [JSON] provided: "+genesToEnrich.size()+" genes.");
-		warningMess = "After filtering out genes not present in pathway file: "+genesToEnrich.size()+" genes remain to be enriched.";
-		
-		if(!Parameters.isSilent) System.out.println("Loading file time: "+Utils.toReadableTime(System.currentTimeMillis() - t1));
-	}*/
-	
 	/**
 	 * Enrichment main function (computes the Fisher's Exact Test p-values for a given list of genesets)
 	 */	
 	public static void runEnrichment()
 	{
-		// TODO if project id in geneset, then it's a personal genset with stable_ids, not DB ids
-		// TODO what if there is only one geneset. Background should not be equal to only these genes... Create a case then
-		
 		// Fetching DB
 		DBManager.connect();
 		ArrayList<GeneSet> genesets = DBManager.getGeneSets(Parameters.geneset_id);
@@ -69,7 +37,6 @@ public class Enrichment
 		
     	// Open Loom file in read-only
     	LoomFile loom = new LoomFile("r", Parameters.loomFile);
-    	loom.checkLoomFormat();
     	StringArray64 ens_ids = loom.readStringArray("/row_attrs/Accession");
 		if(ens_ids == null) new ErrorJSON("No Ensembl Ids in Loom file.", Parameters.JSONFileName);
     	//System.out.println(ens_ids.size() + " genes found in the Loom file");

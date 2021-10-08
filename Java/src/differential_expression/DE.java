@@ -40,7 +40,7 @@ public class DE
 		
 		// Write output.json
 		StringBuilder sb = new StringBuilder();
-    	sb.append("{").append("\"time_idle\":").append(Parameters.idleTime).append(",\"metadata\":[{\"name\":\"").append(Parameters.oAnnot).append("\",\"on\":\"row\",\"type\":\"NUMERIC\",\"nber_cols\":5,\"nber_rows\":");
+    	sb.append("{").append("\"time_idle\":").append(Parameters.idleTime).append(",\"metadata\":[{\"name\":\"").append(Parameters.oAnnot).append("\",\"on\":\"GENE\",\"type\":\"NUMERIC\",\"nber_cols\":5,\"nber_rows\":");
 		sb.append(nber_genes).append(",\"headers\":[\"log Fold-Change\",\"p-value\",\"FDR\",\"Avg. Exp. Group 1\",\"Avg. Exp. Group 2\"]").append("}]}");
 		try
 		{
