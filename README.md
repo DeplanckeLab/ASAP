@@ -9,4 +9,4 @@ Mostly, this is composed of:
 - Java code (for handling the Loom files, generating the JSON, handling the fast-no-RAM computations)
 - [Ruby-On-Rails Server code & Docker files](https://github.com/fabdavid/asap2_web)
 
-Please visit <a href="https://asap-beta.epfl.ch">ASAP</a> for more information.
+Please visit <a href="https://asap.epfl.ch">ASAP</a> for more information.
