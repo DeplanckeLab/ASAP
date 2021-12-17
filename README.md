@@ -1,6 +1,8 @@
 # ASAP : Automated Single-cell Analysis Pipeline
 
-Here are the source codes used on the server to run the different tools available on <a href="https://asap-beta.epfl.ch">ASAP</a>.
+To access the online tool: <a href="https://asap.epfl.ch">https://asap.epfl.ch</a>.
+
+Here are the source codes used on the server to run the different tools available on <a href="https://asap.epfl.ch">ASAP</a>.
 Currently, this code is running on the BETA version of ASAP, but the original website is still accessible <a href="https://asap.epfl.ch">here</a>.
 
 Mostly, this is composed of:
