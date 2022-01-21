@@ -14,6 +14,9 @@ public class Parameters
 {
 	public static enum OutputType{JSON, PLAIN_TEXT};
 	
+	// Debug
+	public static boolean debugMode = false;
+	
 	// Chunking
 	public static final int defaultChunkX = 64;
 	public static final int defaultChunkY = 64;
@@ -33,7 +36,6 @@ public class Parameters
 	public static String erccFile = null;
 	public static int organism = 1;
 	public static int taxon = -1;
-	public static String configFile = "asap.conf";
 	public static long nCells = -1;
 	public static long nGenes = -1;
 	public static long[] indexes = null;
@@ -77,6 +79,7 @@ public class Parameters
 	public static String gAnnot = null;
 	public static String group_1 = null;
 	public static String group_2 = null;
+	public static long id = -1;
 	
 	// Normalization
 	public static long scale_factor = 10000; 
@@ -163,6 +166,9 @@ public class Parameters
 			case DifferentialExpression: 
 				loadDifferentialExpression(args);
 				break;
+			case FindMarkers: 
+				loadFindMarkers(args);
+				break;
 			case Normalization:
 				loadNormalization(args);
 				break;
@@ -171,6 +177,12 @@ public class Parameters
 				break;
 			case RegenerateNewOrganism:
 				loadRegenerateNewOrganism(args);
+				break;
+			case IndexByCell:
+				loadIndexByCell(args);
+				break;
+			case GetIndex:
+				loadGetIndex(args);
 				break;
 			case ExtractRow:
 				loadExtractRow(args);
@@ -296,7 +308,7 @@ public class Parameters
 						break;
 					case "-h":
 						i++;
-						DBManager.URL = "jdbc:postgresql://" + args[i] + "?user=" + Config.getProperty("mDbUser") + "&password=" + Config.getProperty("mDbPwds");
+						DBManager.URL = Config.ConfigMAIN().getURLFromHost(args[i]);
 						break;
 					default:
 						System.err.println("Unused argument: " + arg);
@@ -414,7 +426,7 @@ public class Parameters
 						break;
 					case "-h":
 						i++;
-						DBManager.URL = "jdbc:postgresql://" + args[i] + "?user=" + Config.getProperty("mDbUser") + "&password=" + Config.getProperty("mDbPwds");
+						DBManager.URL = Config.ConfigMAIN().getURLFromHost(args[i]);
 						break;
 					default:
 						System.err.println("Unused argument: " + arg);
@@ -447,7 +459,7 @@ public class Parameters
 						break;
 					case "-h":
 						i++;
-						DBManager.URL = "jdbc:postgresql://" + args[i] + "?user=" + Config.getProperty("mDbUser") + "&password=" + Config.getProperty("mDbPwds");
+						DBManager.URL = Config.ConfigMAIN().getURLFromHost(args[i]);
 						break;
 					default:
 						System.err.println("Unused argument: " + arg);
@@ -1164,11 +1176,7 @@ public class Parameters
 						outputFolder = args[i];
 						outputFolder = outputFolder.replaceAll("\\\\", "/");
 						File f = new File(outputFolder);
-						if(!f.exists()) 
-						{
-							System.out.println("Output folder does not exist. Creating it");
-							f.mkdirs();
-						}
+						if(!f.exists()) f.mkdirs();
 						else if(!f.isDirectory()) new ErrorJSON(outputFolder + " is not a folder.");
 						if(!outputFolder.endsWith("/")) outputFolder+= "/";
 						break;
@@ -1355,6 +1363,131 @@ public class Parameters
 		}
 	}
 	
+	public static void loadIndexByCell(String[] args)
+	{
+		for(int i = 0; i < args.length; i++) 
+		{
+			String arg = args[i];
+			if(arg.startsWith("-"))
+			{
+				switch(arg)
+				{
+					case "-o":
+					case "--output":
+						i++;
+						outputFolder = args[i];
+						outputFolder = outputFolder.replaceAll("\\\\", "/");
+						File f = new File(outputFolder);
+						if(!f.exists()) f.mkdirs();
+						else if(!f.isDirectory()) new ErrorJSON(outputFolder + " is not a folder.");
+						if(!outputFolder.endsWith("/")) outputFolder+= "/";
+						break;
+					case "--loom":
+						i++;
+						try
+						{
+							loomFile = args[i].replaceAll("\\\\", "/");
+							File c = new File(loomFile);
+							if(!c.exists()) new ErrorJSON("No file at path " + loomFile);
+							if(!c.isFile()) new ErrorJSON(loomFile + " is not a file");
+						}
+						catch(Exception e)
+						{
+							new ErrorJSON("The '-loom' option should be followed by Loom file path. " + e.getMessage() + ". You entered " + args[i]);
+						}
+						break;
+					case "--loomIndex":
+						i++;
+						try
+						{
+							loomFile2 = args[i].replaceAll("\\\\", "/");
+							File c = new File(loomFile2);
+							if(!c.exists()) new ErrorJSON("No file at path " + loomFile2);
+							if(!c.isFile()) new ErrorJSON(loomFile2 + " is not a file");
+						}
+						catch(Exception e)
+						{
+							new ErrorJSON("The '--loomIndex' option should be followed by Loom file path. " + e.getMessage() + ". You entered " + args[i]);
+						}
+						break;
+					case "--iAnnot":
+						i++;
+						iAnnot = args[i];
+						if(!iAnnot.startsWith("/")) iAnnot = "/" + iAnnot;
+						break;
+					case "--id":
+						i++;
+						try
+						{
+							id = Long.parseLong(args[i]);
+							if(id < 0) new ErrorJSON("The '--id' option should be followed by a Positive Long. You entered " + args[i]);
+						}
+						catch(NumberFormatException nfe)
+						{
+							new ErrorJSON("The '--id' option should be followed by a Long. You entered " + args[i]);
+						}
+						break;
+					default:
+						System.err.println("Unused argument: " + arg);
+				}
+			}
+		}
+		if(loomFile == null) new ErrorJSON("No Loom file is specified, please use the '--loom' option.\n");
+		if(loomFile2 == null) new ErrorJSON("No Index Loom file is specified, please use the '--loomIndex' option.\n");
+		if(iAnnot == null) new ErrorJSON("No input dataset is specified, please use the '--iAnnot' option.\n");
+		if(id == -1) new ErrorJSON("No table id is specified for the metadata, please use the '--id' option.\n");
+		if(outputFolder != null) new File(outputFolder).mkdirs();
+	}
+	
+	public static void loadGetIndex(String[] args)
+	{
+		for(int i = 0; i < args.length; i++) 
+		{
+			String arg = args[i];
+			if(arg.startsWith("-"))
+			{
+				switch(arg)
+				{
+					case "-o":
+					case "--output":
+						i++;
+						outputFolder = args[i];
+						outputFolder = outputFolder.replaceAll("\\\\", "/");
+						File f = new File(outputFolder);
+						if(!f.exists()) f.mkdirs();
+						else if(!f.isDirectory()) new ErrorJSON(outputFolder + " is not a folder.");
+						if(!outputFolder.endsWith("/")) outputFolder+= "/";
+						break;
+					case "--loomIndex":
+						i++;
+						try
+						{
+							loomFile = args[i].replaceAll("\\\\", "/");
+							File c = new File(loomFile);
+							if(!c.exists()) new ErrorJSON("No file at path " + loomFile);
+							if(!c.isFile()) new ErrorJSON(loomFile + " is not a file");
+						}
+						catch(Exception e)
+						{
+							new ErrorJSON("The '--loomIndex' option should be followed by Loom file path. " + e.getMessage() + ". You entered " + args[i]);
+						}
+						break;
+					case "--jsonListCells":
+						i++;
+						JSONFileName = args[i];
+						JSONFileName = JSONFileName.replaceAll("\\\\", "/");
+						if(new File(JSONFileName).isDirectory()) new ErrorJSON("'--jsonListCells' should be followed by a JSON file name containing cell names, not a folder name.");
+						break;
+					default:
+						System.err.println("Unused argument: " + arg);
+				}
+			}
+		}
+		if(loomFile == null) new ErrorJSON("No Index Loom file is specified, please use the '--loomIndex' option.\n");
+		if(JSONFileName == null) new ErrorJSON("No JSON file name (with cell names) is specified, please use the '--jsonListCells' option.\n");
+		if(outputFolder != null) new File(outputFolder).mkdirs();
+	}
+	
 	public static void loadParsing(String[] args)
 	{
 		for(int i = 0; i < args.length; i++) 
@@ -1369,11 +1502,7 @@ public class Parameters
 						outputFolder = args[i];
 						outputFolder = outputFolder.replaceAll("\\\\", "/");
 						File f = new File(outputFolder);
-						if(!f.exists()) 
-						{
-							System.out.println("Output folder does not exist. Creating it");
-							f.mkdirs();
-						}
+						if(!f.exists()) f.mkdirs();
 						else if(!f.isDirectory()) new ErrorJSON(outputFolder + " is not a folder.");
 						if(!outputFolder.endsWith("/")) outputFolder+= "/";
 						break;
@@ -1461,7 +1590,7 @@ public class Parameters
 						break;
 					case "-h":
 						i++;
-						DBManager.URL = "jdbc:postgresql://" + args[i] + "?user=" + Config.getProperty("mDbUser") + "&password=" + Config.getProperty("mDbPwds");
+						DBManager.URL = Config.ConfigMAIN().getURLFromHost(args[i]);
 						break;
 					default:
 						System.err.println("Unused argument: " + arg);
@@ -1671,7 +1800,7 @@ public class Parameters
 						break;
 					case "-h":
 						i++;
-						DBManager.URL = "jdbc:postgresql://" + args[i] + "?user=" + Config.getProperty("mDbUser") + "&password=" + Config.getProperty("mDbPwds");
+						DBManager.URL = Config.ConfigMAIN().getURLFromHost(args[i]);
 						break;
 					default:
 						System.err.println("Unused argument: " + arg);
@@ -1955,11 +2084,7 @@ public class Parameters
 						outputFolder = args[i];
 						outputFolder = outputFolder.replaceAll("\\\\", "/");
 						File f = new File(outputFolder);
-						if(!f.exists()) 
-						{
-							System.out.println("Output folder does not exist. Creating it");
-							f.mkdirs();
-						}
+						if(!f.exists()) f.mkdirs();
 						else if(!f.isDirectory()) new ErrorJSON(outputFolder + " is not a folder.");
 						if(!outputFolder.endsWith("/")) outputFolder+= "/";
 						break;
@@ -2027,6 +2152,68 @@ public class Parameters
 		if(group_2 == null) System.out.println("No comparison group is specified, will perform reference group vs the rest of the groups");
 		if(group_1 == group_2) new ErrorJSON("Cannot compute DE from the same group.");
 		new File(outputFolder).mkdirs();
+	}
+	
+	public static void loadFindMarkers(String[] args)
+	{
+		for(int i = 0; i < args.length; i++) 
+		{
+			String arg = args[i];
+			if(arg.startsWith("-"))
+			{
+				switch(arg)
+				{
+					case "-o":
+					case "--output":
+						i++;
+						outputFolder = args[i];
+						outputFolder = outputFolder.replaceAll("\\\\", "/");
+						File f = new File(outputFolder);
+						if(!f.exists()) f.mkdirs();
+						else if(!f.isDirectory()) new ErrorJSON(outputFolder + " is not a folder.");
+						if(!outputFolder.endsWith("/")) outputFolder+= "/";
+						break;
+					case "--loom":
+						i++;
+						try
+						{
+							loomFile = args[i].replaceAll("\\\\", "/");
+							File c = new File(loomFile);
+							if(!c.exists()) new ErrorJSON("No file at path " + loomFile);
+							if(!c.isFile()) new ErrorJSON(loomFile + " is not a file");
+						}
+						catch(Exception e)
+						{
+							new ErrorJSON("The '-loom' option should be followed by Loom file path. " + e.getMessage() + ". You entered " + args[i]);
+						}
+						break;
+					case "--iAnnot":
+						i++;
+						iAnnot = args[i];
+						if(!iAnnot.startsWith("/")) iAnnot = "/" + iAnnot;
+						break;
+					case "--id":
+						i++;
+						try
+						{
+							id = Long.parseLong(args[i]);
+							if(id < 0) new ErrorJSON("The '--id' option should be followed by a Positive Long. You entered " + args[i]);
+						}
+						catch(NumberFormatException nfe)
+						{
+							new ErrorJSON("The '--id' option should be followed by a Long. You entered " + args[i]);
+						}
+						break;
+					default:
+						System.err.println("Unused argument: " + arg);
+				}
+			}
+		}
+		if(loomFile == null) new ErrorJSON("No Loom file is specified, please use the '--loom' option");
+		if(iAnnot == null) new ErrorJSON("No input dataset is specified, please use the '--iAnnot' option");
+		if(id == -1) new ErrorJSON("No table id is specified for the metadata, please use the '--id' option");
+		if(outputFolder == null) new ErrorJSON("No output folder was specified with '-o' option. Please specify an output folder.");
+		if(outputFolder != null) new File(outputFolder).mkdirs();
 	}
 	
 	public static void loadNormalization(String[] args)
@@ -2165,7 +2352,7 @@ public class Parameters
 				System.out.println("-adj %s \tStatitical adjustment method for multiple comparision [bonferroni, fdr, or none, default = fdr].");
 				System.out.println("-min %i \tMinimum number of genes in a pathway for being taken into consideration [default = 15].");
 				System.out.println("-max %i \tMaximum number of genes in a pathway for being taken into consideration [default = 500].");
-				System.out.println("-h %s \t\tTo change specific host (default is " + Config.getProperty("mDbHost") + ")");
+				System.out.println("-h %s \t\tTo change specific host (default is " + Config.ConfigMAIN().getProperty("mDbHost") + ")");
 				break;
 			case ModuleScore: 
 				System.out.println("ModuleScore Mode\n\nOptions:");
@@ -2180,7 +2367,7 @@ public class Parameters
 				System.out.println("-nBackgroundGenes %i \tNumber of background gene to take randomly (with replacement) from one features' same bin (default = 100)");
 				System.out.println("-nBins %i \tNumber of bins to generate (default = 24)");
 				System.out.println("-sel %s \tIn case of a metadata, name of the reference selection");
-				System.out.println("-h %s \t\tTo change specific host (default is " + Config.getProperty("mDbHost") + ")");
+				System.out.println("-h %s \t\tTo change specific host (default is " + Config.ConfigMAIN().getProperty("mDbHost") + ")");
 				break;
 			case Preparsing: 
 				System.out.println("Preparsing Mode\n\nOptions:");
@@ -2191,7 +2378,7 @@ public class Parameters
 				System.out.println("-header %b \tThe file has a header [true, false].");
 				System.out.println("-sel %s \tIn case of an archive, or a h5 with multiple groups, name of entry to load as a dataset.");
 				System.out.println("-d %s \t\tDelimiter.");
-				System.out.println("-h %s \t\tTo change specific host (default is " + Config.getProperty("mDbHost") + ")");
+				System.out.println("-h %s \t\tTo change specific host (default is " + Config.ConfigMAIN().getProperty("mDbHost") + ")");
 				break;
 			case Parsing: 
 				System.out.println("Parsing Mode\n\nOptions:");
@@ -2312,7 +2499,7 @@ public class Parameters
 			case UpdateEnsemblDB:
 				System.out.println("UpdateEnsemblDB\n\nOptions:");
 				System.out.println("-o %s \t\tOutput folder.");
-				System.out.println("-h %s \t\tTo change specific host (default is " + Config.getProperty("mDbHost") + ")");
+				System.out.println("-h %s \t\tTo change specific host (default is " + Config.ConfigMAIN().getProperty("mDbHost") + ")");
 				break;
 			case CreateKeggDB:
 				System.out.println("CreateKeggDB\n\nOptions:");
@@ -2392,6 +2579,28 @@ public class Parameters
 				System.out.println("-fc %f \t\tThreshold for Fold Change [default=0]");
 				System.out.println("-top %i \tSelecting only the top X genes (ranked by FC)");
 				System.out.println("-light \tFor not outputting the genes ids (just the number).");
+				break;
+			case FindMarkers:
+				System.out.println("FindMarkers Mode\n\nOptions:");
+				System.out.println("-o | --output %s \t[Optional] Output JSON file.");
+				System.out.println("--loom %s \t[Required] Input Loom file");
+				System.out.println("--iAnnot %s \t[Required] Input metadata e.g. '/row_attrs/toto'");
+				System.out.println("--id %i \t[Required] Id of the metadata in the table annot (database asap)");
+				break;
+			case IndexByCell:
+				System.out.println("IndexByCell Mode\n\nOptions:");
+				System.out.println("-o | --output %s \t[Optional] Output JSON file.");
+				System.out.println("--loom %s \t[Required] Input Loom file");
+				System.out.println("--loomIndex %s \t[Required] Loom file containing index");
+				System.out.println("--iAnnot %s \t[Required] Input metadata e.g. '/row_attrs/toto'");
+				System.out.println("--id %i \t[Required] Id of the metadata in the table annot (database asap)");
+				break;
+			case GetIndex: 
+				System.out.println("GetIndex Mode\n\nOptions:");
+				System.out.println("-o | --output %s \t[Optional] Output JSON file.");
+				System.out.println("--loomIndex %s \t[Required] Loom file containing index");
+				System.out.println("--jsonListCells %s \t[Required] JSON file containing cells to consider");
+
 				break;
 		}
 		System.out.println();

@@ -8,6 +8,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 
+import com.google.gson.Gson;
+
 import json.ErrorJSON;
 import model.GeneSet;
 import model.MapGene;
@@ -702,15 +704,91 @@ public class DBManager
 			catch(SQLException se2){ }// nothing we can do
 		}
 	}
+	
+	public static HashMap<String, Integer> getListCatJSON(long id)
+	{
+		HashMap<String, Integer> categories = new HashMap<String, Integer>();
+		
+		// I perform my request
+		Statement stmt = null;
+		try
+		{
+			stmt = conn.createStatement();
+		
+			String sql = "SELECT list_cat_json FROM annots WHERE id="+id;
+			ResultSet rs = stmt.executeQuery(sql);
+			 
+			// I check the results and compare to my gene list
+			if (!rs.next()) new ErrorJSON("No list_cat_json in annots table with id = " + id);
+			else
+			{
+				String json = rs.getString("list_cat_json");
+				Gson gson = new Gson();
+				String[] cat = gson.fromJson(json, String[].class);
+				for(int i = 0; i < cat.length; i++) categories.put(cat[i], i + 1);
+			    if(rs.next()) new ErrorJSON("Too many list_cat_json in annots table with id = " + id);
+			}
+		}
+		catch(Exception e)
+		{
+			e.printStackTrace();
+		}
+		finally
+		{
+			try
+			{
+				if(stmt!=null) stmt.close();
+			}
+			catch(SQLException se2){ }// nothing we can do
+		}
+		return categories;
+	}
+	
+	public static int getNbCatJSON(String id)
+	{
+		int nbCat = -1;
+		
+		// I perform my request
+		Statement stmt = null;
+		try
+		{
+			stmt = conn.createStatement();
+		
+			String sql = "SELECT list_cat_json FROM annots WHERE id="+id;
+			ResultSet rs = stmt.executeQuery(sql);
+			 
+			// I check the results and compare to my gene list
+			if (!rs.next()) new ErrorJSON("No list_cat_json in annots table with id = " + id);
+			else
+			{
+				String json = rs.getString("list_cat_json");
+				Gson gson = new Gson();
+				String[] cat = gson.fromJson(json, String[].class);
+				nbCat = cat.length;
+			    if(rs.next()) new ErrorJSON("Too many list_cat_json in annots table with id = " + id);
+			}
+		}
+		catch(Exception e)
+		{
+			e.printStackTrace();
+		}
+		finally
+		{
+			try
+			{
+				if(stmt!=null) stmt.close();
+			}
+			catch(SQLException se2){ }// nothing we can do
+		}
+		return nbCat;
+	}
 
 	public static void connect()
 	{
 		try
 		{
 			Class.forName(JDBC_DRIVER);
-			//System.out.println("Connecting to database: " + URL);
 			conn = DriverManager.getConnection(URL);
-			//System.out.println("Connected!");
 		}
 		catch(Exception e)
 		{

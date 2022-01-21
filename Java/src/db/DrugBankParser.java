@@ -17,18 +17,16 @@ import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
-import config.Config;
-
 public class DrugBankParser // Get XML from here https://www.drugbank.ca/releases/latest
 {
 	public static HashMap<Integer, StringBuilder> output = new HashMap<>();
 	
 	public static void main(String[] args)
 	{
-		DBManager.JDBC_DRIVER = Config.getProperty("mDbDriv");
-		if(DBManager.JDBC_DRIVER.equals("com.mysql.jdbc.Driver")) DBManager.URL = "jdbc:mysql://";
-		else if(DBManager.JDBC_DRIVER.equals("org.postgresql.Driver")) DBManager.URL = "jdbc:postgresql://";
-		DBManager.URL += Config.getProperty("mDbHost") + "?user=" + Config.getProperty("mDbUser") + "&password=" + Config.getProperty("mDbPwds");
+		//DBManager.JDBC_DRIVER = Config.getProperty("mDbDriv");
+		//if(DBManager.JDBC_DRIVER.equals("com.mysql.jdbc.Driver")) DBManager.URL = "jdbc:mysql://";
+		//else if(DBManager.JDBC_DRIVER.equals("org.postgresql.Driver")) DBManager.URL = "jdbc:postgresql://";
+		//DBManager.URL += Config.getProperty("mDbHost") + "?user=" + Config.getProperty("mDbUser") + "&password=" + Config.getProperty("mDbPwds");
 		
 		
 		DBManager.connect();

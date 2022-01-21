@@ -1,3 +1,4 @@
+import java.io.File;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -18,6 +19,7 @@ import hdf5.loom.LoomFile;
 import json.CopyMetaJSON;
 import json.ErrorJSON;
 import json.FilterCellsJSON;
+import model.AnnotationIndex;
 import model.MetaOn;
 import model.Metadata;
 import model.Metatype;
@@ -39,11 +41,19 @@ public class ASAP
 	
 	public static void main(String[] args)
 	{
-		DBManager.JDBC_DRIVER = "org.postgresql.Driver";
-		DBManager.URL = "jdbc:postgresql://" + Config.getProperty("mDbHost") + "?user=" + Config.getProperty("mDbUser") + "&password=" + Config.getProperty("mDbPwds");
+		DBManager.JDBC_DRIVER = Config.driver;
+		DBManager.URL = Config.ConfigMAIN().getURL("asap2_data_v5");
 		
-		String[] args2 = readMode(args);
+		// Check if debug mode
+		String[] args2 = isDebug(args);
+		if(Parameters.debugMode) DBManager.URL = Config.ConfigDEV().getURL("asap2_data_v5");
+		
+		// Check which tool is called
+		args2 = readMode(args2);
+		
+		// Load associated parameters
 		Parameters.load(args2, m);
+		
 		Utils.initRandomGenerator();
 		switch(m)
 		{
@@ -64,6 +74,9 @@ public class ASAP
 				break;
 			case DifferentialExpression: 
 				DE.performDE();
+				break;
+			case FindMarkers:
+				DE.findMarkers();
 				break;
 			case Normalization: 
 				Normalization.runNormalization();
@@ -86,18 +99,160 @@ public class ASAP
 			case ParseMetadata:
 				FileParser.parseMetadata();
 				break;
+			case IndexByCell:			
+				// Recuperate the indexes of all categories for this metadata
+				if(Parameters.debugMode) DBManager.URL = Config.ConfigDEV().getURL("asap2_development"); // Annotations/Metadata are not in same DB
+				else DBManager.URL = Config.ConfigMAIN().getURL("asap2_development");
+				DBManager.connect();
+				HashMap<String, Integer> categories = DBManager.getListCatJSON(Parameters.id);
+				DBManager.disconnect();
+				
+				// Reading Loom with metadata to index
+				LoomFile loom = new LoomFile("r", Parameters.loomFile);
+				LongArray64 stable_ids = loom.getCellStableIds();
+				if(stable_ids == null) new ErrorJSON("No StableID in this Loom file: " + Parameters.loomFile);
+										
+				// Extract metadata from Loom
+				Metadata metadata = loom.fillInfoMetadata(Parameters.iAnnot, true);
+				if(metadata.values.size() != loom.getNbCells()) new ErrorJSON("Nb of cells do not match this metadata");
+				loom.close();
+				
+				// Opening Loom file containing the cell indexes (Can be the same file, that's why I close it first. I could do a test to not close it if it's the same file.... but meh...)
+				if(!new File(Parameters.loomFile2).exists()) new ErrorJSON("This loom file used for storing the indexes, does not exist: " + Parameters.loomFile2);
+				LoomFile loomIndex = new LoomFile("r+", Parameters.loomFile2);
+				LongArray64 stable_ids_REF = loomIndex.getCellStableIds();
+				if(stable_ids_REF == null) new ErrorJSON("No StableID in this Loom file: " + Parameters.loomFile2);
+				
+				// Extract existing indexes, or create it
+				StringArray64 indexesByCell = null;
+				if(!loomIndex.exists("/col_attrs/_INDEX_ASAP_CELLS")) indexesByCell = new StringArray64(stable_ids_REF.size());
+				else indexesByCell = loomIndex.readStringArray("/col_attrs/_INDEX_ASAP_CELLS");
+				
+				// Add indexes
+				long idx_to_add = 0;
+				long sid_to_add = stable_ids.get(idx_to_add);
+				for(int i = 0; i < indexesByCell.size(); i++)
+				{
+					long stable_id = stable_ids_REF.get(i);
+					if(stable_id == sid_to_add) // Here I suppose that all stable_ids are sorted. If this is not the case, this will fail.... See error after the loop
+					{
+						String idx = indexesByCell.get(i);
+						StringBuffer sb = new StringBuffer(idx);
+						if(!idx.equals("")) sb.append(",");
+						Integer val = categories.get(metadata.values.get(idx_to_add));
+						if(val == null) new ErrorJSON("This category: " + metadata.values.get(idx_to_add) + " was not found in the DB, for metadata id = " + Parameters.id);
+						sb.append(Parameters.id).append(":").append(val);
+						indexesByCell.set(i, sb.toString());
+						idx_to_add++;
+						if(idx_to_add == stable_ids.size()) break;
+						sid_to_add = stable_ids.get(idx_to_add);
+					}
+				}
+				if(idx_to_add != stable_ids.size()) new ErrorJSON("Could not find all indexes? Stable_ids are not sorted?");
+				
+				// Write results in Loom
+				loomIndex.writeStringArray("/col_attrs/_INDEX_ASAP_CELLS", indexesByCell);	
+				loomIndex.close();
+				
+				// Creating output string
+	    		StringBuilder sb = new StringBuilder();
+	    		sb.append("{\"nb_cells_indexed\":").append(idx_to_add).append("}");
+	    		
+				// Writing results
+		    	Utils.writeJSON(sb);
+
+				break;
+			case GetIndex:
+				// Handle correct DB
+				if(Parameters.debugMode) DBManager.URL = Config.ConfigDEV().getURL("asap2_development"); // Annotations/Metadata are not in same DB
+				else DBManager.URL = Config.ConfigMAIN().getURL("asap2_development");
+				
+				// First, recuperate the list of cells (stable_ids)
+				long[] cellsToCheck = FilterCellsJSON.parseJSON(Parameters.JSONFileName).selected_cells; // Stable_ids
+				HashSet<Long> cellsToCheckMap = new HashSet<>();
+				for(Long s:cellsToCheck) cellsToCheckMap.add(s);
+
+				// Opening Loom file containing the cell indexes
+				loomIndex = new LoomFile("r", Parameters.loomFile);
+				stable_ids_REF = loomIndex.getCellStableIds();
+				if(stable_ids_REF == null) new ErrorJSON("No StableID in this Loom file: " + Parameters.loomFile);
+
+				// Extract existing indexes
+				indexesByCell = null;
+				if(!loomIndex.exists("/col_attrs/_INDEX_ASAP_CELLS")) new ErrorJSON("'/col_attrs/_INDEX_ASAP_CELLS' is not present in loom " + Parameters.loomFile);
+				indexesByCell = loomIndex.readStringArray("/col_attrs/_INDEX_ASAP_CELLS");
+				loomIndex.close();
+				
+				// Now compute the stats
+				HashMap<String, AnnotationIndex> counts = new HashMap<String, AnnotationIndex>(); // Results
+				DBManager.connect(); // Connect to the DB to retrieve the categories
+				for(long i = 0; i < indexesByCell.size(); i++)
+				{
+					long stable_id = stable_ids_REF.get(i);
+					if(cellsToCheckMap.remove(stable_id)) // It's a cell to consider
+					{
+						String row = indexesByCell.get(i);
+						// Parsing using fastest method possible (split is slow as hell)
+						
+						int start = 0;
+						HashSet<String> safetyCheck = new HashSet<String>();
+						while(start < row.length())
+						{
+							int columnSep = row.indexOf(':', start);
+							int commaSep = row.indexOf(',', columnSep);
+							if(commaSep == -1) commaSep = row.length();
+							String id = row.substring(start, columnSep);
+							if(safetyCheck.contains(id)) new ErrorJSON("Cell with stable_id " + stable_id + " has several time the metadata index " + id);
+							safetyCheck.add(id);
+							String cat = row.substring(columnSep + 1, commaSep);
+							
+							AnnotationIndex ai = counts.get(id);
+							if(ai == null) ai = new AnnotationIndex(id);
+							ai.add(cat);
+							counts.put(id, ai);
+							start = commaSep + 1;
+						}
+					}
+				}
+				DBManager.disconnect();
+				
+				// Safety check
+				if(cellsToCheckMap.size() > 0) new ErrorJSON("Some cells stable_ids are not in the Loom index file: " + Utils.toString(cellsToCheckMap));
+				
+				// Write output JSON
+				sb = new StringBuilder("{");
+				String prefix = "";
+				for(String metaId:counts.keySet())
+				{
+					sb.append(prefix).append("\"").append(metaId).append("\":[");
+					AnnotationIndex ai = counts.get(metaId);
+					String prefix2 = "";
+					for(int i = 0; i < ai.categories.length; i++)
+					{
+						sb.append(prefix2).append(ai.categories[i]);
+						prefix2 = ",";
+					}
+					sb.append("]");
+					prefix = ",";
+				}		
+				sb.append("}");
+				
+				// Writing results
+		    	Utils.writeJSON(sb);
+				
+				break;
 			case ExtractRow:
 				// Cells to extract values from
 				LongArray64 cellStableIds = null;		
 				if(Parameters.loom_cell_stable_ids != null) {
-					LoomFile loom = new LoomFile("r", Parameters.loom_cell_stable_ids);
+					loom = new LoomFile("r", Parameters.loom_cell_stable_ids);
 					if(!loom.exists("/col_attrs/_StableID")) new ErrorJSON("No StableID in this Loom file: " + Parameters.loom_cell_stable_ids);
 					cellStableIds = loom.readLongArray("/col_attrs/_StableID");
 					loom.close();
 				}
 								
 				// Reading Loom with data to extract
-				LoomFile loom = new LoomFile("r", Parameters.loomFile);
+				loom = new LoomFile("r", Parameters.loomFile);
 				LongArray64 cell_indexes = null; // Limit to these cells
 				if(cellStableIds != null) cell_indexes = loom.getCellIndexesByStableIds(cellStableIds);
 				
@@ -127,7 +282,7 @@ public class ASAP
 				}
 				
 				// Creating output string
-	    		StringBuilder sb = new StringBuilder();
+	    		sb = new StringBuilder();
 	    		sb.append("{\"values\":[");
 	    		
 	    		// In case of sorting
@@ -136,7 +291,7 @@ public class ASAP
 	    		HashMap<Long, int[]> orders = new HashMap<Long, int[]>(); // Keep the orders in memory
 	    		
 	    		// Start reading the values
-	    		String prefix = "";
+	    		prefix = "";
 	    		if(dim[0] < 100) // TODO replace this by handling CONTIGUOUS / CHUNKED + Handle multiple read in same block
 	    		{
 	    			// Load the whole thing in memory
@@ -293,7 +448,7 @@ public class ASAP
 				// If stable_ids to be added
 				if(Parameters.export_stable_ids)
 				{
-					LongArray64 stable_ids = null;
+					stable_ids = null;
 					if(dim[1] == nbCells) stable_ids = loom.getCellStableIds(); // depends of the metadata/dataset to extract
 					else if(dim[1] == nbGenes) stable_ids = loom.getGeneStableIds();
 					else new ErrorJSON("Not sure what to do here...");
@@ -418,7 +573,7 @@ public class ASAP
 				// If stable_ids to be added
 				if(Parameters.export_stable_ids)
 				{
-					LongArray64 stable_ids = null;
+					stable_ids = null;
 					if(dim[0] == nbCells) stable_ids = loom.getCellStableIds(); // depends of the metadata/dataset to extract
 					else if(dim[0] == nbGenes) stable_ids = loom.getGeneStableIds();
 					else new ErrorJSON("Not sure what to do here...");
@@ -626,7 +781,7 @@ public class ASAP
 				for(String metaToExtract:metapath)
 				{
 					// Extract metadata from Loom
-					Metadata metadata = loom.fillInfoMetadata(metaToExtract, true); // We could in principle simplify this part if we know already the data type / if we want to output the values / etc...
+					metadata = loom.fillInfoMetadata(metaToExtract, true); // We could in principle simplify this part if we know already the data type / if we want to output the values / etc...
 					//if(Parameters.metaName != null && Parameters.metatype != null) metadata.type = Parameters.metatype;
 					if(Parameters.metatype != null) metadata.type = Parameters.metatype;
 					
@@ -721,7 +876,7 @@ public class ASAP
 				
 				// Create Metadata and write in Loom file
 				loom = new LoomFile("r+", Parameters.loomFile);
-				LongArray64 stable_ids = loom.readLongArray("/col_attrs/_StableID");
+				stable_ids = loom.readLongArray("/col_attrs/_StableID");
 				IntArray64 newMetadata = new IntArray64(loom.getDimensions()[1]);
 				for(long i = 0; i < stable_ids.size(); i++) {
 					if(selectedStableIDs.remove(stable_ids.get(i))) newMetadata.set(i, 1);
@@ -842,38 +997,60 @@ public class ASAP
 			
 	public static String[] readMode(String[] args)
 	{
-		String[] args2 = null;
-		if(args.length >= 2)
+		// Find -T
+		int index = -1;
+		for(int i = 0; i < args.length; i++) 
 		{
-			args2 = new String[args.length - 2];
-			int j = 0;
-			for(int i = 0; i < args.length; i++) 
+			String arg = args[i];
+			if(arg.equals("-T")) {index = i; break;}
+		}
+		if(index == -1 || args.length < 2) new ErrorJSON("Argument -T is mandatory:\n-T %s \t\tMode to run ASAP. Please select in " + Mode.toArrayString());
+			
+		String[] args2 = new String[args.length - 2];
+		int j = 0;
+		for(int i = 0; i < args.length; i++) 
+		{
+			String arg = args[i];
+			switch(arg)
 			{
-				String arg = args[i];
-				switch(arg)
-				{
-					case "-T":
-						i++;
-						try
-						{
-							m = Mode.valueOf(args[i]);
-						}
-						catch(IllegalArgumentException iae)
-						{
-							new ErrorJSON("This mode (-T) '" + args[i] + "' does not exist. Please select in " + Mode.toArrayString());
-						}
-						break;
-					default:
-						args2[j] = arg;
-						j++;
-				}
+				case "-T":
+					i++;
+					try
+					{
+						m = Mode.valueOf(args[i]);
+					}
+					catch(IllegalArgumentException iae)
+					{
+						new ErrorJSON("This mode (-T) '" + args[i] + "' does not exist. Please select in " + Mode.toArrayString());
+					}
+					break;
+				default:
+					args2[j] = arg;
+					j++;
 			}
 		}
-		if(m == null || args.length < 2)
+		return args2;
+	}
+	
+	public static String[] isDebug(String[] args)
+	{
+		// Find --debug
+		String[] args2 = new String[args.length - 1]; // In case --debug exists
+		int j = 0;
+		for(int i = 0; i < args.length; i++) 
 		{
-			System.out.println("Argument -T is mandatory:");
-			System.out.println("-T %s \t\tMode to run ASAP. Please select in " + Mode.toArrayString());
-			System.exit(-1);
+			String arg = args[i];
+			if(arg.equals("--debug")) 
+			{
+				if(Parameters.debugMode) new ErrorJSON("There are more than once '--debug' option!");
+				Parameters.debugMode = true;
+			}
+			else
+			{
+				if(j == args2.length) return args; // No debug
+				args2[j] = args[i];
+				j++;
+			}
 		}
 		return args2;
 	}

@@ -190,6 +190,18 @@ public class LoomFile
 		return res[0];
 	}
 	
+	public long getNbGenes()
+	{
+		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
+		return this.getDimensions("/matrix")[0];
+	}
+	
+	public long getNbCells()
+	{
+		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
+		return this.getDimensions("/matrix")[1];
+	}
+	
 	public float[] readCol(long index, String path)
 	{
 		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
@@ -922,7 +934,9 @@ public class LoomFile
 	
 	public LongArray64 getCellStableIds()
 	{
-		return this.readLongArray("/col_attrs/_StableID");
+		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
+		if(this.exists("/col_attrs/_StableID")) return this.readLongArray("/col_attrs/_StableID");
+		return null;
 	}
 	
 	public LongArray64 getGeneStableIds()

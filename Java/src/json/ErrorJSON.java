@@ -16,13 +16,13 @@ public class ErrorJSON
 		LoomFile.close_all();
 		this.displayed_error = errorMessage;
 		if(path != null) writeJSON(path);
-		System.err.println(this.displayed_error);
+		else System.out.println("{\"displayed_error\":\"" + displayed_error + "\"}");
 		System.exit(-1);
 	}
 	
 	public ErrorJSON(String errorMessage) 
 	{
-		this(errorMessage, Parameters.outputFolder + "output.json");
+		this(errorMessage, ((Parameters.outputFolder == null)?null:(Parameters.outputFolder + "output.json")));
 	}
     
     private void writeJSON(String path)

@@ -13,6 +13,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -55,6 +56,28 @@ public class Utils
 		DecimalFormatSymbols symbols = DecimalFormatSymbols.getInstance();
 		symbols.setDecimalSeparator('.');
 		df = new DecimalFormat(sb.toString(), symbols);
+	}
+	
+	public static void writeJSON(StringBuilder content)
+	{
+		String out = content.toString();
+		if(WarningJSON.isAnyWarning())
+		{
+			int index = out.lastIndexOf("}");
+			out = out.substring(0, index);
+			out = out + "," + WarningJSON.getJSON() + "}";
+		}
+		if(Parameters.outputFolder == null) System.out.println(out);
+		else
+		{
+			try
+			{
+	    		BufferedWriter bw = new BufferedWriter(new FileWriter(Parameters.outputFolder + "output.json"));
+	    		bw.write(out);
+	        	bw.close();
+			}
+			catch(IOException ioe) { new ErrorJSON(ioe.getMessage()); }
+		}
 	}
 	
 	public static void writeJSON(StringBuilder content, String outputJSONFile)
@@ -427,6 +450,38 @@ public class Utils
 		}
 		res.append("]");
 		return res;
+	}
+	
+	public static String toString(HashSet<Long> values)
+	{
+		StringBuffer sb = new StringBuffer("[");
+		if(values != null)
+		{
+			String prefix = "";
+			for(Long val:values)
+			{
+				sb.append(prefix).append(val);
+				prefix = ",";
+			}
+		}
+		sb.append("]");
+		return sb.toString();
+	}
+	
+	public static String toString(ArrayList<String> values)
+	{
+		StringBuffer sb = new StringBuffer("[");
+		if(values != null)
+		{
+			String prefix = "";
+			for(String val:values)
+			{
+				sb.append(prefix).append("\"").append(val).append("\"");
+				prefix = ",";
+			}
+		}
+		sb.append("]");
+		return sb.toString();
 	}
 	
 	public static double var(double[] data)
