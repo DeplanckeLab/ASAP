@@ -8,6 +8,8 @@ import java.util.HashMap;
 
 import org.apache.commons.math3.stat.inference.MannWhitneyUTest;
 
+import bigarrays.LongArray64;
+import bigarrays.StringArray64;
 import config.Config;
 import db.DBManager;
 import hdf5.loom.LoomFile;
@@ -78,6 +80,16 @@ public class DE
     	// Safety check
     	for(String cat:groups.categories) if(categories.get(cat) == null) new ErrorJSON("Categories in database with metadata id = " + Parameters.id + " do NOT match content of Loom file");
     	if(groups.categories.size() != categories.size()) new ErrorJSON("Categories in database with metadata id = " + Parameters.id + " do NOT match content of Loom file");
+    	
+    	// Recuperate stable_id / gene names
+    	if(!loom.exists("/row_attrs/_StableID")) new ErrorJSON("Error in the Loom file. Path '/row_attrs/_StableID' does not exist!");
+    	LongArray64 stable_ids = loom.readLongArray("/row_attrs/_StableID");
+    	if(!loom.exists("/row_attrs/Original_Gene")) new ErrorJSON("Error in the Loom file. Path '/row_attrs/Original_Gene' does not exist!");
+    	StringArray64 original_genes = loom.readStringArray("/row_attrs/Original_Gene");
+    	if(!loom.exists("/row_attrs/Gene")) new ErrorJSON("Error in the Loom file. Path '/row_attrs/Gene' does not exist!");
+    	StringArray64 genes = loom.readStringArray("/row_attrs/Gene");
+    	if(!loom.exists("/row_attrs/Accession")) new ErrorJSON("Error in the Loom file. Path '/row_attrs/Accession' does not exist!");
+    	StringArray64 ensembls = loom.readStringArray("/row_attrs/Accession");
     	
     	// Read the Loom file line by line and perform DE
     	long[] dim = loom.getDimensions();
@@ -195,11 +207,16 @@ public class DE
     		{
     			outputfiles.add("cat_" + g1 + ".tsv");
 	    		BufferedWriter bw = new BufferedWriter(new FileWriter(Parameters.outputFolder + "cat_" + g1 + ".tsv"));
-	    		bw.write("logfc\tpval\tfdr\tavg_"+g1+"\tavg_not_"+g1+"\n");
-	    		for(int i = 0; i < res[0].length; i++)
+	    		bw.write("stable_id\toriginal_gene\tgene\tensembl\tlogfc\tpval\tfdr\tavg_"+g1+"\tavg_not_"+g1+"\n");
+	    		
+	    		// Sort by PVALUE
+	    		int[] sortedIndexes = Utils.order(Utils.abs(res[0]), true); // Sort by absolute value of fold change
+	    		
+	    		for(int k = 0; k < sortedIndexes.length; k++)
 	    		{
+	    			int i = sortedIndexes[k];
 	    			sb = new StringBuilder();
-	    			sb.append(res[0][i]).append("\t").append(res[1][i]).append("\t").append(res[2][i]).append("\t").append(res[3][i]).append("\t").append(res[4][i]).append("\n");
+	    			sb.append(stable_ids.get(i)).append("\t").append(original_genes.get(i)).append("\t").append(genes.get(i)).append("\t").append(ensembls.get(i)).append("\t").append(res[0][i]).append("\t").append(res[1][i]).append("\t").append(res[2][i]).append("\t").append(res[3][i]).append("\t").append(res[4][i]).append("\n");
 	    			bw.write(sb.toString());
 	    		}
 	    		bw.close();
@@ -212,8 +229,8 @@ public class DE
     	
 		// Prepare JSON
 		sb = new StringBuilder();
-    	sb.append("{").append("\"time_idle\":").append(Parameters.idleTime).append(",\"output_files\":").append(Utils.toString(outputfiles)).append(",\"nber_cols\":5,\"nber_rows\":");
-		sb.append(nber_genes).append(",\"headers\":[\"log Fold-Change\",\"p-value\",\"FDR\",\"Avg. Exp. REF group\",\"Avg. Exp. COMPLEMENT\"]").append("}");
+    	sb.append("{").append("\"time_idle\":").append(Parameters.idleTime).append(",\"output_files\":").append(Utils.toString(outputfiles)).append(",\"nber_cols\":9,\"nber_rows\":");
+		sb.append(nber_genes).append(",\"headers\":[\"stable_id\",\"Original Gene\",\"Gene\",\"Ensembl\",\"log Fold-Change\",\"p-value\",\"FDR\",\"Avg. Exp. REF group\",\"Avg. Exp. COMPLEMENT\"]").append("}");
 		
 		// Writing results
     	Utils.writeJSON(sb);

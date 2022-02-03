@@ -574,6 +574,13 @@ public class Utils
 		return sortD(map, reversed);
 	}
 	
+	public static float[] abs(float[] array)
+	{
+		float[] res = new float[array.length];
+		for (int i = 0; i < array.length; i++) res[i] = Math.abs(array[i]);
+		return res;
+	}
+	
 	public static int[] order(float[] array, boolean reversed) // return array of indexes
 	{
 		HashMap<Integer, Float> map = new HashMap<>(array.length);

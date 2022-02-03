@@ -2582,7 +2582,7 @@ public class Parameters
 				break;
 			case FindMarkers:
 				System.out.println("FindMarkers Mode\n\nOptions:");
-				System.out.println("-o | --output %s \t[Optional] Output JSON file.");
+				System.out.println("-o | --output %s \t[Optional] Output folder");
 				System.out.println("--loom %s \t[Required] Input Loom file");
 				System.out.println("--iAnnot %s \t[Required] Input metadata e.g. '/row_attrs/toto'");
 				System.out.println("--id %i \t[Required] Id of the metadata in the table annot (database asap)");
