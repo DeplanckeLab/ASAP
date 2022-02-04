@@ -255,6 +255,13 @@ public class Utils
 	    return Math.log(x) / LOG2;
 	}
 	
+	public static double[] log2p(double[] array)
+	{
+		double[] logarray = new double[array.length];
+		for(int i = 0; i < logarray.length; i++) logarray[i] = Math.log(array[i]) / LOG2;
+	    return logarray;
+	}
+	
 	public static void setSeed(int seed)
 	{
 		rand = new Random(seed);

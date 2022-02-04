@@ -12,6 +12,7 @@ public enum Mode
 	CreateKeggDB,
 	DifferentialExpression,
 	FindMarkers,
+	MarkerEnrichment,
 	Normalization,
 	Scaling,
 	UpdateEnsemblDB,

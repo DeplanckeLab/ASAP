@@ -8,6 +8,7 @@ import java.util.HashMap;
 
 import org.apache.commons.math3.stat.inference.MannWhitneyUTest;
 
+import bigarrays.DoubleArray64;
 import bigarrays.LongArray64;
 import bigarrays.StringArray64;
 import config.Config;
@@ -90,6 +91,8 @@ public class DE
     	StringArray64 genes = loom.readStringArray("/row_attrs/Gene");
     	if(!loom.exists("/row_attrs/Accession")) new ErrorJSON("Error in the Loom file. Path '/row_attrs/Accession' does not exist!");
     	StringArray64 ensembls = loom.readStringArray("/row_attrs/Accession");
+    	if(!loom.exists("/col_attrs/_Depth")) new ErrorJSON("Error in the Loom file. Path '/col_attrs/_Depth' should exist!");
+    	DoubleArray64 depth = loom.readDoubleArray("/col_attrs/_Depth");
     	
     	// Read the Loom file line by line and perform DE
     	long[] dim = loom.getDimensions();
@@ -165,9 +168,9 @@ public class DE
 		        	ArrayList<Integer> listIndexes1 = indexGroupMap.get(g1);
 		        	ArrayList<Integer> listIndexes2 = indexGroupMap.get(-g1);
 		        	double[] array1 = new double[listIndexes1.size()];
-		        	for(int j = 0; j < listIndexes1.size(); j++) array1[j] = subMatrix[x][listIndexes1.get(j)];
+		        	for(int j = 0; j < listIndexes1.size(); j++) array1[j] = (subMatrix[x][listIndexes1.get(j)] / depth.get(listIndexes1.get(j))) * Parameters.scale_factor; // Seurat normalization on-the-go
 		        	double[] array2 = new double[listIndexes2.size()];
-		        	for(int j = 0; j < listIndexes2.size(); j++) array2[j] = subMatrix[x][listIndexes2.get(j)];
+		        	for(int j = 0; j < listIndexes2.size(); j++) array2[j] = (subMatrix[x][listIndexes2.get(j)] / depth.get(listIndexes1.get(j))) * Parameters.scale_factor; // Seurat normalization on-the-go
 
 					//MannWhitneyTest test = new MannWhitneyTest(toCompute.get(Parameters.group_1), toCompute.get(Parameters.group_2));
 					//pvals[i] = test.exactSP(); // In principle, in R, if there is ties, it should be the "approx" that is computed instead of the "exact"
@@ -177,7 +180,7 @@ public class DE
 		        	double mean1 = Utils.mean(array1);
 		        	double mean2 = Utils.mean(array2);
 		        	res[0][i] = (float)(Utils.log2(1 + mean1) - Utils.log2(1 + mean2));
-		        	res[1][i] = (float)test.mannWhitneyUTest(array1, array2); // This one does not give exactly the same results as R, but is muchhhhhh faster than the JSC on
+		        	res[1][i] = (float)test.mannWhitneyUTest(Utils.log2p(array1), Utils.log2p(array2)); // This one does not give exactly the same results as R, but is muchhhhhh faster than the JSC on
 		        	res[3][i] = (float)mean1;
 		        	res[4][i] = (float)mean2;
 		        	results.put(g1, res);
@@ -240,13 +243,23 @@ public class DE
     {  	
     	long nber_genes = 0;
     	
+    	// Open Loom file in read-only and read metadata
     	if(!loom.exists(Parameters.iAnnot)) new ErrorJSON("Error in the Loom file. Path "+Parameters.iAnnot+" should exist!");
-    	
-    	// Get the groups
-    	System.out.print("Parsing Group metadata... ");
     	Metadata groups = loom.fillInfoMetadata(Parameters.gAnnot, true);
-    	System.out.println("Group metadata (" + Parameters.gAnnot + ") contains " + groups.categories.size() + " groups");
+
+    	// Error check
+    	if(groups.categories.size() < 2) new ErrorJSON("Group metadata (" + Parameters.iAnnot + ") does not contain enough groups");
+    	if(!groups.isCategorical()) new ErrorJSON("Group metadata (" + Parameters.iAnnot + ") is not a CATEGORICAL metadata");
     	
+    	// Recuperate infos from loom, and depth for on-the-go normalization
+    	if(!loom.exists("/col_attrs/_Depth")) new ErrorJSON("Error in the Loom file. Path '/col_attrs/_Depth' should exist!");
+    	DoubleArray64 depth = loom.readDoubleArray("/col_attrs/_Depth");
+    	long[] dim = loom.getDimensions();
+		int[] blockSize = loom.getChunkSizes();
+    	
+    	// Prepare final results
+		float[][] results = new float[5][(int)dim[0]]; // 0 logFC", 1 "pval", 2 "FDR", 3 "AveG1", 4 "AveG2"
+		
     	// Handle the case where g2 is complementary group
     	if(Parameters.group_2 == null)
     	{
@@ -257,29 +270,37 @@ public class DE
         		if(!g.equals(Parameters.group_1)) groups.values.set(i, "Complement_ASAP");      		
         	}
     	}
-    	
-    	// Check that g1 and g2 are in groups
-    	int nbG1 = 0, nbG2 = 0;
-    	for(long i = 0; i < groups.values.size(); i++)
+		
+    	// Prepare the indexes of cells/cols, for each group
+    	HashMap<String, ArrayList<Integer>> indexGroupMap = new HashMap<String, ArrayList<Integer>>();
+    	for(int i = 0; i < groups.values.size(); i++)
     	{
-    		String g = groups.values.get(i);
-    		if(g.equals(Parameters.group_1)) nbG1++;
-    		else if(Parameters.group_2 == null) nbG2++;
-    		if(Parameters.group_2 != null && g.equals(Parameters.group_2)) nbG2++;
+    	 	String g = groups.values.get(i);
+    	 	
+    	 	if(g.equals(Parameters.group_1) || g.equals(Parameters.group_2))
+    	 	{
+	    	 	// Group
+	    	 	ArrayList<Integer> listIndexes1 = indexGroupMap.get(g);
+	    	 	if(listIndexes1 == null) listIndexes1 = new ArrayList<Integer>();
+	    	 	listIndexes1.add(i);
+	    	 	indexGroupMap.put(g, listIndexes1);
+    	 	}
     	}
+
+    	// Get indexes
+    	ArrayList<Integer> listIndexes1 = indexGroupMap.get(Parameters.group_1);
+    	ArrayList<Integer> listIndexes2 = indexGroupMap.get(Parameters.group_2);
+    	
+    	// Check that g1 and g2 are in groups with correct size
+    	int nbG1 = listIndexes1.size();
+    	int nbG2 = listIndexes2.size();
     	if(nbG1 < 3) { loom.close(); new ErrorJSON("Group 1 should contain at least 3 samples"); }
     	if(nbG2 < 3) { loom.close(); new ErrorJSON("Group 2 should contain at least 3 samples"); }
-    	System.out.println("Your reference group (G1) contains " + nbG1 + " cells, while the comparison group (G2) has " + nbG2);
-    	
-    	// Read the Loom file line by line and perform DE
-    	long[] dim = loom.getDimensions();
-		int[] blockSize = loom.getChunkSizes();
-		
-		float[][] results = new float[5][(int)dim[0]]; // 0 logFC", 1 "pval", 2 "FDR", 3 "AveG1", 4 "AveG2"
-		
+
+    	// Read by chunks
 		int nbTotalBlocks = (int)Math.ceil((double)dim[0] / blockSize[0]); // dim[0] === Nb genes ?
-		System.out.println("Reading " + nbTotalBlocks + " independent blocks...");
-		
+
+		// Start reading the /matrix (always exists / normalized on the go)
 		MannWhitneyUTest test = new MannWhitneyUTest();
 		nber_genes = 0;
 		for(int nbBlocks = 0; nbBlocks < nbTotalBlocks; nbBlocks++)
@@ -292,46 +313,31 @@ public class DE
 			{
 				int i = x + nbBlocks * blockSize[0]; // Original index of gene
 				
-				HashMap<String, double[]> toCompute = new HashMap<String, double[]>(); // I should do DoubleArray64 here, but Wilcox test will not handle it
-				toCompute.put(Parameters.group_1, new double[nbG1]);
-				toCompute.put(Parameters.group_2, new double[nbG2]);
-				HashMap<String, Integer> indexes = new HashMap<String, Integer>();
-				indexes.put(Parameters.group_1, 0);
-				indexes.put(Parameters.group_2, 0);
-				HashMap<String, Float> means = new HashMap<String, Float>();
-				means.put(Parameters.group_1, 0f);
-				means.put(Parameters.group_2, 0f);
-				
-				for(int j = 0; j < subMatrix[0].length; j++) // Index of cell
-				{
-					String g = groups.values.get(j);
-					double[] array = toCompute.get(g);
-					if(array != null) // If this is one of the groups we are interested in
-					{
-						int index = indexes.get(g);
-						array[index] = subMatrix[x][j];
-						means.put(g, means.get(g) + (subMatrix[x][j] / array.length));
-						indexes.put(g, index + 1);
-					}
-				}
-				//MannWhitneyTest test = new MannWhitneyTest(toCompute.get(Parameters.group_1), toCompute.get(Parameters.group_2));
-				//pvals[i] = test.exactSP(); // In principle, in R, if there is ties, it should be the "approx" that is computed instead of the "exact"
-				results[0][i] = (float)(Utils.log2(1 + means.get(Parameters.group_1)) - Utils.log2(1 + means.get(Parameters.group_2)));
-				results[1][i] = (float)test.mannWhitneyUTest(toCompute.get(Parameters.group_1), toCompute.get(Parameters.group_2)); // This one does not give exactly the same results as R, but is muchhhhhh faster than the JSC on
-				results[3][i] = (float)means.get(Parameters.group_1);
-				results[4][i] = (float)means.get(Parameters.group_2);
+				// Prepare array
+	        	double[] array1 = new double[listIndexes1.size()];
+	        	for(int j = 0; j < listIndexes1.size(); j++) array1[j] = (subMatrix[x][listIndexes1.get(j)] / depth.get(listIndexes1.get(j))) * Parameters.scale_factor; // Seurat normalization on-the-go
+	        	double[] array2 = new double[listIndexes2.size()];
+	        	for(int j = 0; j < listIndexes2.size(); j++) array2[j] = (subMatrix[x][listIndexes2.get(j)] / depth.get(listIndexes1.get(j))) * Parameters.scale_factor; // Seurat normalization on-the-go
+
+	        	// Update results for this gene
+	        	double mean1 = Utils.mean(array1);
+	        	double mean2 = Utils.mean(array2);
+	        	results[0][i] = (float)(Utils.log2(1 + mean1) - Utils.log2(1 + mean2));
+	        	results[1][i] = (float)test.mannWhitneyUTest(Utils.log2p(array1), Utils.log2p(array2)); // This one does not give exactly the same results as R, but is muchhhhhh faster than the JSC on
+	        	results[3][i] = (float)mean1;
+	        	results[4][i] = (float)mean2;
 				
 				nber_genes++;
 			}
 		}
 		
-		// FDR calculation
-		results[2] = Utils.p_adjust_F(results[1], "fdr");
-		
 		// Closing loom Read-only mode
 		loom.close();
 		
-		// Write results
+		// FDR calculation
+		results[2] = Utils.p_adjust_F(results[1], "fdr");
+		
+		// Write results in Loom file
 		loom = new LoomFile("r+", Parameters.loomFile);
 		loom.writeMatrixMetadata(Parameters.oAnnot, Utils.t(results));
 		
