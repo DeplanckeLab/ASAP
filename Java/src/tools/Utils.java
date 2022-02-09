@@ -715,6 +715,40 @@ public class Utils
 		return rankedIndexes;
 	}*/
 	
+	public static ArrayList<File> listMarkerFiles(String root) 
+	{
+		ArrayList<File> files = new ArrayList<File>();
+		listMarkerFiles(root, files);
+		return files;
+	}
+	
+	private static void listMarkerFiles(String root, ArrayList<File> files) 
+	{
+		
+		File[] fList = new File(root).listFiles();
+		for (File file : fList) 
+		{
+			if(file.isFile() && isMarkerFile(file.getName())) files.add(file);
+			else if(file.isDirectory()) listMarkerFiles(file.getAbsolutePath(), files);
+		}
+	}
+	
+	private static boolean isMarkerFile(String path)
+	{
+		if(path.endsWith(".enrichment.tsv")) return false;
+		if(path.endsWith(".tsv")) return true;
+		//if(path.endsWith(".tsv.gz")) return true;
+		return false;
+	}
+	
+	public static String getFilename(String path)
+	{
+		path = path.replaceAll("\\\\", "/");
+		String res = path.substring(path.lastIndexOf("/") + 1, path.length());
+		if(res.endsWith(".tsv")) res = res.substring(0, res.lastIndexOf(".tsv")); // For Enrichment 
+		return res;
+	}
+	
 	public static String[] sortKeys(Set<String> keySet)
 	{
 		String[] keys = keySet.toArray(new String[keySet.size()]);

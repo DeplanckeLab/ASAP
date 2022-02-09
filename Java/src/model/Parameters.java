@@ -12,6 +12,7 @@ import tools.Utils;
 
 public class Parameters 
 {
+	public static int maxUniverse = 100000; // for FISHER EXACT TEST (max number of genes in background)
 	public static enum OutputType{JSON, PLAIN_TEXT};
 	
 	// Debug
@@ -100,7 +101,8 @@ public class Parameters
 	
 	// Enrichment
 	public static String adjMethod = "fdr";
-	public static int geneset_id = -1;
+	public static long geneset_id = -1;
+	public static long[] geneset_ids = null;
 	public static enrichment.model.Model enrichModel = enrichment.model.Model.FET;
 	public static int maxGenesInPathway = 500;
 	public static int minGenesInPathway = 15;
@@ -138,6 +140,9 @@ public class Parameters
 				break;
 			case Enrichment:
 				loadEnrichment(args);
+				break;
+			case MarkerEnrichment:
+				loadMarkerEnrichment(args);
 				break;
 			case ModuleScore:
 				loadModuleScore(args);
@@ -266,7 +271,7 @@ public class Parameters
 						i++;
 						try
 						{
-							geneset_id = Integer.parseInt(args[i]);
+							geneset_id = Long.parseLong(args[i]);
 						}
 						catch(NumberFormatException nfe)
 						{
@@ -318,6 +323,66 @@ public class Parameters
 		if(loomFile == null) new ErrorJSON("No Loom file is specified, please choose one by using the '-loom' option.");
 		if(geneset_id == -1) new ErrorJSON("No geneset id is specified, please choose one by using the '-geneset' option.");
 		if(fileName == null) new ErrorJSON("No JSON file containing the list of genes to enrich, please choose one by using the '-f' option.");
+	}
+	
+	public static void loadMarkerEnrichment(String[] args)
+	{
+		for(int i = 0; i < args.length; i++) 
+		{
+			String arg = args[i];
+			if(arg.startsWith("-"))
+			{
+				switch(arg)
+				{				
+					case "-o":
+					case "--output-folder":
+						i++;
+						outputFolder = args[i];
+						outputFolder = outputFolder.replaceAll("\\\\", "/");
+						File f = new File(outputFolder);
+						if(!f.exists()) f.mkdirs();
+						else if(!f.isDirectory()) new ErrorJSON(outputFolder + " is not a folder.");
+						if(!outputFolder.endsWith("/")) outputFolder+= "/";
+						break;
+					case "-i":
+					case "--input-folder":
+						i++;
+						fileName = args[i];
+						fileName = fileName.replaceAll("\\\\", "/");
+						f = new File(fileName);
+						if(!f.exists()) new ErrorJSON(fileName + " does not exist.");
+						else if(!f.isDirectory()) new ErrorJSON(fileName + " is not a folder.");
+						if(!fileName.endsWith("/")) fileName+= "/";
+						break;
+					case "--genesets":
+						i++;
+						try
+						{
+							String[] tokens = args[i].split(",");
+							geneset_ids = new long[tokens.length];
+							for(int k = 0; k < tokens.length; k++) 
+							{
+								geneset_ids[k] = Long.parseLong(tokens[k]);
+								if(geneset_ids[k] < 0) new ErrorJSON("The '--genesets' option should be followed by positive Long value(s). You entered " + geneset_ids[k]);
+							}
+						}
+						catch(NumberFormatException nfe)
+						{
+							new ErrorJSON("The '--genesets' option should be followed by an list of integers (eventually separated by commas if multiple). You entered " + args[i]);
+						}
+						break;
+					case "-h":
+						i++;
+						DBManager.URL = Config.ConfigMAIN().getURLFromHost(args[i]);
+						break;
+					default:
+						System.err.println("Unused argument: " + arg);
+				}
+			}
+		}
+		if(geneset_ids == null) new ErrorJSON("No geneset id is specified, please choose one by using the '--genesets' option.");
+		if(fileName == null) new ErrorJSON("No JSON file containing the list of genes to enrich, please choose one by using the '-i' option.");
+		if(outputFolder == null) new ErrorJSON("No output folder is specified, please choose one by using the '-o' option.");
 	}
 	
 	public static void loadModuleScore(String[] args)
@@ -405,7 +470,7 @@ public class Parameters
 						i++;
 						try
 						{
-							geneset_id = Integer.parseInt(args[i]);
+							geneset_id = Long.parseLong(args[i]);
 						}
 						catch(NumberFormatException nfe)
 						{
@@ -2352,7 +2417,16 @@ public class Parameters
 				System.out.println("-adj %s \tStatitical adjustment method for multiple comparision [bonferroni, fdr, or none, default = fdr].");
 				System.out.println("-min %i \tMinimum number of genes in a pathway for being taken into consideration [default = 15].");
 				System.out.println("-max %i \tMaximum number of genes in a pathway for being taken into consideration [default = 500].");
-				System.out.println("-h %s \t\tTo change specific host (default is " + Config.ConfigMAIN().getProperty("mDbHost") + ")");
+				if(Parameters.debugMode) System.out.println("-h %s \t\tTo change specific host (default is " + Config.ConfigDEV().getProperty("mDbHost") + ")");
+				else System.out.println("-h %s \t\tTo change specific host (default is " + Config.ConfigMAIN().getProperty("mDbHost") + ")");
+				break;
+			case MarkerEnrichment: 
+				System.out.println("MarkerEnrichment Mode\n\nOptions:");
+				System.out.println("-o | --output-folder %s \t[Required] Output folder");
+				System.out.println("-i | --input-folder %s \t\t[Required] The folder path containing the FindMarker's output");
+				System.out.println("--genesets %i,%i,... \t\t[Required]Id of the gene_sets to use for enrichment in the DB (separated by comma, if multiple).");
+				if(Parameters.debugMode) System.out.println("-h %s \t\t\t\tTo change specific host (default is " + Config.ConfigDEV().getProperty("mDbHost") + ")");
+				else System.out.println("-h %s \t\t\t\tTo change specific host (default is " + Config.ConfigMAIN().getProperty("mDbHost") + ")");
 				break;
 			case ModuleScore: 
 				System.out.println("ModuleScore Mode\n\nOptions:");
@@ -2367,7 +2441,8 @@ public class Parameters
 				System.out.println("-nBackgroundGenes %i \tNumber of background gene to take randomly (with replacement) from one features' same bin (default = 100)");
 				System.out.println("-nBins %i \tNumber of bins to generate (default = 24)");
 				System.out.println("-sel %s \tIn case of a metadata, name of the reference selection");
-				System.out.println("-h %s \t\tTo change specific host (default is " + Config.ConfigMAIN().getProperty("mDbHost") + ")");
+				if(Parameters.debugMode) System.out.println("-h %s \t\tTo change specific host (default is " + Config.ConfigDEV().getProperty("mDbHost") + ")");
+				else System.out.println("-h %s \t\tTo change specific host (default is " + Config.ConfigMAIN().getProperty("mDbHost") + ")");
 				break;
 			case Preparsing: 
 				System.out.println("Preparsing Mode\n\nOptions:");
@@ -2378,7 +2453,8 @@ public class Parameters
 				System.out.println("-header %b \tThe file has a header [true, false].");
 				System.out.println("-sel %s \tIn case of an archive, or a h5 with multiple groups, name of entry to load as a dataset.");
 				System.out.println("-d %s \t\tDelimiter.");
-				System.out.println("-h %s \t\tTo change specific host (default is " + Config.ConfigMAIN().getProperty("mDbHost") + ")");
+				if(Parameters.debugMode) System.out.println("-h %s \t\tTo change specific host (default is " + Config.ConfigDEV().getProperty("mDbHost") + ")");
+				else System.out.println("-h %s \t\tTo change specific host (default is " + Config.ConfigMAIN().getProperty("mDbHost") + ")");
 				break;
 			case Parsing: 
 				System.out.println("Parsing Mode\n\nOptions:");
@@ -2499,7 +2575,8 @@ public class Parameters
 			case UpdateEnsemblDB:
 				System.out.println("UpdateEnsemblDB\n\nOptions:");
 				System.out.println("-o %s \t\tOutput folder.");
-				System.out.println("-h %s \t\tTo change specific host (default is " + Config.ConfigMAIN().getProperty("mDbHost") + ")");
+				if(Parameters.debugMode) System.out.println("-h %s \t\tTo change specific host (default is " + Config.ConfigDEV().getProperty("mDbHost") + ")");
+				else System.out.println("-h %s \t\tTo change specific host (default is " + Config.ConfigMAIN().getProperty("mDbHost") + ")");
 				break;
 			case CreateKeggDB:
 				System.out.println("CreateKeggDB\n\nOptions:");

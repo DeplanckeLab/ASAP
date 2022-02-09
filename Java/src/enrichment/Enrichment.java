@@ -1,4 +1,10 @@
 package enrichment;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -8,12 +14,12 @@ import db.DBManager;
 import enrichment.model.EnrichmentJSON;
 import enrichment.model.ResultSet;
 import hdf5.loom.LoomFile;
-import jsc.contingencytables.ContingencyTable2x2;
-import jsc.contingencytables.FishersExactTest;
 import json.ErrorJSON;
 import model.GeneSet;
 import model.Parameters;
+import tools.FisherExactTest_2X2;
 import tools.Utils;
+import tools.FisherExactTest_2X2.Alternative;
 
 public class Enrichment 
 {
@@ -25,7 +31,7 @@ public class Enrichment
 		// Fetching DB
 		DBManager.connect();
 		ArrayList<GeneSet> genesets = DBManager.getGeneSets(Parameters.geneset_id);
-		int organism_id = DBManager.getOrganismFromGeneSets(Parameters.geneset_id);
+		long organism_id = DBManager.getOrganismFromGeneSets(Parameters.geneset_id);
 		HashMap<String, Long> genes = DBManager.getGenesInDBByID(organism_id);
 		//System.out.println(genes.size() + " genes were fetched in DB");
 		DBManager.disconnect();
@@ -101,6 +107,159 @@ public class Enrichment
     	Utils.writeJSON(sb, Parameters.JSONFileName);
 	}
 	
+	public static void runMarkerEnrichment()
+	{
+		Parameters.minGenesInPathway = 5;
+		Parameters.maxGenesInPathway = 500;
+		
+		// Get list of output files from FindMarker's step
+		ArrayList<File> files = Utils.listMarkerFiles(Parameters.fileName);
+		if(files.size() == 0) new ErrorJSON("No marker files found!");
+		
+		// Fetching DB
+		ArrayList<GeneSet> genesets = new ArrayList<GeneSet>();
+		long organism_id = -1;
+		DBManager.connect();
+		for(long geneset_id:Parameters.geneset_ids)
+		{
+			genesets.addAll(DBManager.getGeneSets(geneset_id));
+			long id = DBManager.getOrganismFromGeneSets(geneset_id);
+			if(organism_id == -1) organism_id = id;
+			if(organism_id != id) new ErrorJSON("Cannot perform Enrichment across multiple species");
+		}
+		HashMap<String, Long> genes = DBManager.getGenesInDBByID(organism_id);
+		DBManager.disconnect();
+	
+		// Create unique gene hash
+		if(genesets.size() == 0) new ErrorJSON("No genesets found in DB corresponding to this/these id(s)");
+		HashSet<Long> genesInGenesets = new HashSet<Long>();
+		for(GeneSet g:genesets) for(long gene:g.content) genesInGenesets.add(gene);
+
+		// Perform enrichment for each .tsv file
+		HashMap<String,  ArrayList<ResultSet>> listRes = new HashMap<String,  ArrayList<ResultSet>>();
+		try
+		{
+			for(File tsv:files)
+			{
+				// Prepare lists
+				HashMap<String, Long> dbIDByEnsemblId = new HashMap<String, Long>(); // background genes
+				HashSet<Long> upRegulatedGenes = new HashSet<Long>(); // up-regulated genes
+				
+		    	// Read file
+				BufferedReader br = new BufferedReader(new FileReader(tsv));
+				br.readLine(); // Header: stable_id	original_gene	gene	ensembl	logfc	pval	fdr	avg_1	avg_not_1
+				String line = br.readLine();
+				try
+				{
+					while(line != null)
+					{
+						String[] tokens = line.split("\t");
+						float logfc = Float.parseFloat(tokens[4]);
+						float fdr = Float.parseFloat(tokens[6]);
+						String ensembl = tokens[3];
+						Long id = genes.get(ensembl);
+						if(id != null && genesInGenesets.contains(id)) 
+						{
+							dbIDByEnsemblId.put(ensembl, id);
+							if(logfc >= 1 && fdr <= 0.05) upRegulatedGenes.add(id);// Abritrary cutoff for FET. Not optimal. Should use a ranked test (like GSEA). Here I keep only UP-regulated genes
+						}
+						line = br.readLine();
+					}
+				}
+				catch(NumberFormatException nfe)
+				{
+					new ErrorJSON(nfe.getMessage());
+				}
+				br.close();
+
+				// Running enrichment
+		    	listRes.put(tsv.getAbsolutePath(), enrich(upRegulatedGenes, genesets, dbIDByEnsemblId));
+			}
+		}
+		catch(IOException ioe)
+		{
+			new ErrorJSON(ioe.getMessage());
+		}
+
+		// Prepare output String {TSV MODE}
+		for(String key:listRes.keySet())
+		{
+			StringBuilder sb = new StringBuilder();
+	    	sb.append("name\tdescription\tp-value\t").append(Parameters.adjMethod).append("\teffect_size\tsize_geneset\toverlap_w_genes\n");
+			ArrayList<ResultSet> res = listRes.get(key);
+			
+			// First loop to get all pvalues and adjust
+			double[] pvalues = new double[res.size()];
+			for(int i = 0; i < pvalues.length; i++) pvalues[i] = res.get(i).p_value;
+			double[] adj_p_value = Utils.p_adjust(pvalues, Parameters.adjMethod);
+			int[] sortedIndexes = Utils.order(pvalues, false);
+			
+			// Second loop to generate the TSV content
+			for(int i:sortedIndexes)
+			{
+				ResultSet enrichRes = res.get(i);
+				sb.append(enrichRes.name).append("\t");
+				sb.append(enrichRes.description).append("\t");
+				sb.append(enrichRes.p_value).append("\t");
+				sb.append(adj_p_value[i]).append("\t");
+				sb.append((enrichRes.effect_size == Double.MAX_VALUE)?"\"Inf\"":enrichRes.effect_size).append("\t");
+				sb.append(enrichRes.size).append("\t");
+				sb.append(enrichRes.overlap).append("\n");;
+			}
+			
+			// Write in TSV file
+			try
+			{
+				BufferedWriter bw = new BufferedWriter(new FileWriter(key.replaceAll(".tsv", ".enrichment.tsv")));
+				bw.write(sb.toString());
+				bw.close();
+			}
+			catch(IOException ioe)
+			{
+				new ErrorJSON(ioe.getMessage());
+			}
+		}
+		
+		// Prepare output String {JSON MODE}
+		/*StringBuilder sb = new StringBuilder();
+    	sb.append("{").append("\"time_idle\":").append(Parameters.idleTime);
+    	sb.append(",\"headers\":[\"name\",\"description\",\"p-value\",\"").append(Parameters.adjMethod).append("\",\"effect size\",\"size geneset\",\"overlap w/ genes\"]");
+		
+		// Go through the results and create the output String
+		for(String key:listRes.keySet())
+		{
+			sb.append(",\"").append(key).append("\":[");
+			ArrayList<ResultSet> res = listRes.get(key);
+			
+			// First loop to get all pvalues and adjust
+			double[] pvalues = new double[res.size()];
+			for(int i = 0; i < pvalues.length; i++) pvalues[i] = res.get(i).p_value;
+			double[] adj_p_value = Utils.p_adjust(pvalues, Parameters.adjMethod);
+			int[] sortedIndexes = Utils.order(pvalues, false);
+			
+			// Second loop to generate the JSON file
+			String prefix = "";
+			for(int i:sortedIndexes)
+			{
+				ResultSet enrichRes = res.get(i);
+				sb.append(prefix).append("[\"").append(enrichRes.name).append("\"");
+				sb.append(",\"").append(enrichRes.description).append("\"");
+				sb.append(",").append(enrichRes.p_value);
+				sb.append(",").append(adj_p_value[i]);
+				sb.append(",").append((enrichRes.effect_size == Double.MAX_VALUE)?"\"Inf\"":enrichRes.effect_size);
+				sb.append(",").append(enrichRes.size);
+				sb.append(",").append(enrichRes.overlap);
+				sb.append("]");
+				prefix = ",";
+			} 
+			sb.append("]");
+		}
+		sb.append("}");
+    	
+    	// Write output.json
+    	Utils.writeJSON(sb);*/
+	}
+
 	private static HashSet<Long> loomIndexesToDBIds(long[] loomIdx, HashMap<String, Long> dbIDByEnsemblId, StringArray64 ens_ids)
 	{
 		HashSet<Long> res = new HashSet<Long>();
@@ -162,14 +321,11 @@ public class Enrichment
 	
     private static double[] doFExactTest(int a, int b, int c, int d) // res[0] = pvalue, res[1] = OR
     {
-    	if(a == 0) return new double[]{1, 0};
-    	if(b == 0 || c == 0) return new double[]{0, Double.MAX_VALUE};
-    	if(d == 0) return new double[]{1, 0}; // I do this after, in case c & d are both equal to 0
-        ContingencyTable2x2 table = new ContingencyTable2x2(a, b, c, d);
-        FishersExactTest test = new FishersExactTest(table);
-        double twotailedP = test.getOppositeTailProb() + test.getOneTailedSP();
+        double p = FisherExactTest_2X2.getSingleton().fisher(a, b, c, d, Alternative.GREATER); // Homemade function (should be similar to R output)
+        if(b == 0 || c == 0) return new double[]{p, Double.MAX_VALUE}; // Special case, OR = Inf (but p can be computed)
+        if(d == 0) return new double[]{1, 0}; // Special case, p = 1 & OR = 0
         double OR = (double)(a * d) / (b * c);
-        return new double[]{twotailedP, OR};
+        return new double[]{p, OR};
     }
 	
 	/*private static ResultSet applyGSEA(HashMap<String, ArrayList<String>> pathways, HashMap<String, Double> exprs_1, HashMap<String, Double> exprs_2, int minSize, int maxSize)

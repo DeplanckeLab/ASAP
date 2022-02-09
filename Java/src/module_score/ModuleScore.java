@@ -29,7 +29,7 @@ public class ModuleScore
 			// Fetching gene set in DB
 			DBManager.connect();
 			GeneSet geneset = DBManager.getUniqueGeneSet(Parameters.geneset_id);
-			int organism_id = DBManager.getOrganismFromGeneSets(geneset.gene_set_id);
+			long organism_id = DBManager.getOrganismFromGeneSets(geneset.gene_set_id);
 			HashMap<String, Long> genes = DBManager.getGenesInDBByID(organism_id);
 			DBManager.disconnect();
 

@@ -60,7 +60,7 @@ public class DBManager
 	}
 	
 	
-	public static int getOrganismFromGeneSets(int geneset_id) 
+	public static long getOrganismFromGeneSets(long geneset_id) 
 	{
 		Statement stmt = null;
 		try
@@ -120,7 +120,7 @@ public class DBManager
 		}
 	}
 	
-	public static GeneSet getUniqueGeneSet(int id)
+	public static GeneSet getUniqueGeneSet(long id)
 	{
 		GeneSet res = null;
 		Statement stmt = null;
@@ -159,7 +159,7 @@ public class DBManager
 		return res;
 	}
 	
-	public static ArrayList<GeneSet> getGeneSets(int geneset_id) 
+	public static ArrayList<GeneSet> getGeneSets(long geneset_id) 
 	{
 		ArrayList<GeneSet> res = new ArrayList<GeneSet>();
 		Statement stmt = null;
@@ -524,7 +524,7 @@ public class DBManager
 		return 0; // first available is 43 (and this is the answer to everything anyway...)
 	}
 	
-	public static HashMap<String, Long> getGenesInDBByID(int organismID)
+	public static HashMap<String, Long> getGenesInDBByID(long organismID)
 	{
 		HashMap<String, Long> genes = new HashMap<String, Long>();
 		

@@ -38,7 +38,7 @@ import tools.Utils;
 public class ASAP 
 {
 	public static Mode m = null;
-	
+		
 	public static void main(String[] args)
 	{
 		DBManager.JDBC_DRIVER = Config.driver;
@@ -65,6 +65,9 @@ public class ASAP
 				break;
 			case Enrichment:
 				Enrichment.runEnrichment();
+				break;
+			case MarkerEnrichment:
+				Enrichment.runMarkerEnrichment();
 				break;
 			case ModuleScore:
 				ModuleScore.runModuleScore();
