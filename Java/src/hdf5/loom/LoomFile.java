@@ -603,8 +603,8 @@ public class LoomFile
 		return out;
 	}
 	
-	public long[] getDimensions() // 0 = Nb Cells, 1 = Nb Genes
-	{
+	public long[] getDimensions() // 0 = Nb Genes, 1 = Nb Cells
+	{	
 		return this.getDimensions("/matrix");
 	}
 	

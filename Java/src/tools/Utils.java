@@ -384,31 +384,29 @@ public class Utils
 		for(double a : data) sum += a;
 		return sum/data.length;
 	}
-
-	public static double median(int[] data)
+	
+	public static float median(float[] data, boolean sorted) // Warning! If sorted = false, this modify the input array!
 	{
-		Arrays.sort(data);
-		if (data.length % 2 == 0) return ((double)data[data.length/2] + (double)data[data.length/2 - 1])/2;
-		return (double) data[data.length/2];
+		if(!sorted) Arrays.sort(data);
+		if (data.length % 2 == 0) return (data[data.length/2] + data[data.length/2 - 1])/2;
+		return data[data.length/2];
 	}
 	
-	public static double median(ArrayList<Double> data)
+	public static float q1(float[] data, boolean sorted) // Warning! If sorted = false, this modify the input array!
 	{
-		Collections.sort(data);
-		if (data.size() % 2 == 0) return ((double)data.get(data.size()/2) + (double)(data.get(data.size()/2 - 1)))/2;
-		return (double) data.get(data.size()/2);
+		if(!sorted) Arrays.sort(data);
+		if (data.length % 4 == 0) return (data[data.length/4] + data[data.length/4 - 1])/2;
+		return data[data.length/4];
 	}
 	
-	public static Double quartile(double[] data, float quartile)
+	public static float q3(float[] data, boolean sorted) // Warning! If sorted = false, this modify the input array!
 	{
-	    Arrays.sort(data);
-	    if(quartile < 0 || quartile > 1) return null;
-	    int q = (int) Math.round(data.length * quartile);
-	    if(q >= data.length) q = data.length - 1;
-	    return data[q];
+		if(!sorted) Arrays.sort(data);	
+		if ((3 * data.length) % 4 == 0) return (data[(3 * data.length)/4] + data[(3 * data.length)/4 - 1])/2;
+		return data[(3 * data.length)/4];
 	}
 	
-	public static int[] quantiles(float[] array, int nbin)
+	public static int[] quantiles(float[] array, int nbin) // Returns a vector saying which value is in which quartile
 	{
 		int[] ranks = Utils.rank(array);
 		int[] quantiles = new int[ranks.length];
@@ -672,7 +670,7 @@ public class Utils
 	}
 	
 	
-	public static int[] rank(float[] array)
+	public static int[] rank(float[] array) // Checked. Does not change input array
 	{
 	    int[] R = new int[array.length];
 	    Integer [] I = new Integer[array.length];
@@ -686,34 +684,6 @@ public class Utils
 	    }
 	    return R;
 	}
-	
-	/*public static int[] rank(float[] array, boolean reversed)
-	{
-		HashMap<Float, List<Integer>> map = new HashMap<>(array.length);
-		for (int i = 0; i < array.length; i++) 
-		{
-			List<Integer> indexes = map.get(array[i]);
-			if(indexes == null) indexes = new ArrayList<>();
-			indexes.add(i);
-			map.put(array[i], indexes);
-		}
-		return rankF(map, reversed);
-	}
-	
-	public static int[] rankF(HashMap<Float, List<Integer>> map, boolean reversed)
-	{
-		Set<Float> values = new HashSet<>(map.keySet());
-		if(reversed) Collections.sort(values, Collections.reverseOrder());
-		else Collections.sort(values);
-		int[] rankedIndexes = new int[values.size()];
-		for(Float value:values) 
-		{
-			int index = values.indexOf(map.get(key));
-			rankedIndexes[index] = key;
-			values.set(index, null);
-		}
-		return rankedIndexes;
-	}*/
 	
 	public static ArrayList<File> listMarkerFiles(String root) 
 	{

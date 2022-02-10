@@ -1,8 +1,10 @@
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 
+import bigarrays.DoubleArray64;
 import bigarrays.IntArray64;
 import bigarrays.LongArray64;
 import bigarrays.StringArray64;
@@ -26,6 +28,7 @@ import model.Metatype;
 import model.Mode;
 import model.Parameters;
 import model.Parameters.OutputType;
+import model.ResultStats;
 import module_score.ModuleScore;
 import normalization.Normalization;
 import parsing.FileParser;
@@ -38,7 +41,7 @@ import tools.Utils;
 public class ASAP 
 {
 	public static Mode m = null;
-		
+	
 	public static void main(String[] args)
 	{
 		DBManager.JDBC_DRIVER = Config.driver;
@@ -244,7 +247,7 @@ public class ASAP
 		    	Utils.writeJSON(sb);
 				
 				break;
-			case ExtractRow:
+			case GetGeneStats:
 				// Cells to extract values from
 				LongArray64 cellStableIds = null;		
 				if(Parameters.loom_cell_stable_ids != null) {
@@ -257,12 +260,207 @@ public class ASAP
 				// Reading Loom with data to extract
 				loom = new LoomFile("r", Parameters.loomFile);
 				LongArray64 cell_indexes = null; // Limit to these cells
+				int foundcells = 0;
+				if(cellStableIds != null) 
+				{
+					cell_indexes = loom.getCellIndexesByStableIds(cellStableIds);
+					for(long i = 0; i < cell_indexes.size(); i++) if(cell_indexes.get(i) != -1) foundcells++;
+				}
+				
+				// First check the total dimension of the dataset to extract from
+				long[] dim = loom.getDimensions();
+				long nbGenes = dim[0];
+				long nbCells = dim[1];
+				boolean toNormalize = false;
+				if(Parameters.iAnnot == null) { toNormalize = true; Parameters.iAnnot = "/matrix"; }
+				dim = loom.getDimensions(Parameters.iAnnot); // dim[1] = nb of values to extract for each row
+				if(dim[0] != nbGenes && dim[1] != nbCells) { loom.close(); new ErrorJSON("You cannot use GetGeneStats on this dataset: " + Parameters.iAnnot); }
+				
+		    	// Recuperate depth for normalizing the data
+				DoubleArray64 depth = null;
+		    	if(toNormalize)
+		    	{
+					if(!loom.exists("/col_attrs/_Depth")) new ErrorJSON("Error in the Loom file. Path '/col_attrs/_Depth' should exist!");
+			    	depth = loom.readDoubleArray("/col_attrs/_Depth");
+		    	}
+		    	
+				// Retrieve indexes if exist
+				if(Parameters.indexes == null) 
+				{
+					if(Parameters.names != null) Parameters.indexes = loom.getGeneIndexes(Parameters.names);
+					else if(Parameters.stable_ids != null) Parameters.indexes = loom.getGeneIndexesByStableIds(Parameters.stable_ids);
+					// the other case should be handled in Parameters
+				}
+				
+				// Creating output result struct
+				ResultStats[] results = new ResultStats[Parameters.indexes.length];
+				
+	    		// Read the values and compute stats
+				for (int i = 0; i < results.length; i++)
+				{
+					long index = Parameters.indexes[i];
+					if(index == -1) 
+					{
+						results[i] = null;
+					}
+					else
+					{
+						ResultStats res = new ResultStats();
+						
+						// Read the gene expressions
+						float[] row = loom.readRow(index, Parameters.iAnnot); // TODO does not work if too big array // TODO handle multiple read in same block
+						
+						// In case we need to normalize (by column)
+						if(toNormalize)
+						{
+							for (int j = 0; j < row.length; j++) 
+							{
+								row[j] = (float)(row[j] / depth.get(j)) * Parameters.scale_factor;
+							}
+						}
+						
+						// In case some cells are filtered
+						if(cell_indexes != null) 
+						{
+							float[] filtered_row = new float[foundcells];
+							int index_found_cells = 0;
+							for(long ci = 0; ci < cell_indexes.size(); ci++)
+							{
+								long cellI = cell_indexes.get(ci);
+								if(cellI != -1) 
+								{
+									filtered_row[index_found_cells] = row[(int)cellI]; // TODO does not work if too big array
+									index_found_cells++;
+								}
+							}
+							row = filtered_row;
+						}
+						
+						// Compute stats
+						Arrays.sort(row);
+						res.min = row[0];
+						res.median = Utils.median(row, true);
+						res.mean = Utils.mean(row);
+						res.q1 = Utils.q1(row, true);
+						res.q3 = Utils.q3(row, true);
+						res.max = row[row.length - 1];
+						if(toNormalize) res.log2p(); // log2(1 + x) if normalized on-the-go (AFTER computing the mean)
+						results[i] = res;
+					}
+				}
+				
+				// Close handle
+				loom.close();
+				
+				// Create output string
+				sb = new StringBuilder("{");
+				prefix = "";
+				if(Parameters.names != null)
+				{
+					sb.append("\"names\":[");
+					for(int i = 0; i < Parameters.names.length; i++)
+					{
+						sb.append(prefix).append(Parameters.names[i]);
+						prefix = ",";
+					}
+				}
+				else if(Parameters.stable_ids != null)
+				{
+					sb.append("\"stable_ids\":[");
+					for(int i = 0; i < Parameters.stable_ids.length; i++)
+					{
+						sb.append(prefix).append(Parameters.stable_ids[i]);
+						prefix = ",";
+					}
+				}
+				else
+				{
+					sb.append("\"indexes\":[");
+					for(int i = 0; i < Parameters.indexes.length; i++)
+					{
+						sb.append(prefix).append(Parameters.indexes[i]);
+						prefix = ",";
+					}
+				}
+				
+				sb.append("], \"min\":[");
+				prefix = "";
+				for(int i = 0; i < results.length; i++) 
+				{ 
+					if(results[i] == null) sb.append(prefix).append("null"); 
+					else sb.append(prefix).append(results[i].min); 
+					prefix = ",";
+				}
+				
+				sb.append("], \"q1\":[");
+				prefix = "";
+				for(int i = 0; i < results.length; i++) 
+				{ 
+					if(results[i] == null) sb.append(prefix).append("null"); 
+					else sb.append(prefix).append(results[i].q1); 
+					prefix = ",";
+				}
+				
+				sb.append("], \"median\":[");
+				prefix = "";
+				for(int i = 0; i < results.length; i++) 
+				{ 
+					if(results[i] == null) sb.append(prefix).append("null"); 
+					else sb.append(prefix).append(results[i].median); 
+					prefix = ",";
+				}
+
+				sb.append("], \"mean\":[");
+				prefix = "";
+				for(int i = 0; i < results.length; i++) 
+				{ 
+					if(results[i] == null) sb.append(prefix).append("null"); 
+					else sb.append(prefix).append(results[i].mean); 
+					prefix = ",";
+				}
+
+				sb.append("], \"q3\":[");
+				prefix = "";
+				for(int i = 0; i < results.length; i++) 
+				{ 
+					if(results[i] == null) sb.append(prefix).append("null"); 
+					else sb.append(prefix).append(results[i].q3); 
+					prefix = ",";
+				}
+
+				sb.append("], \"max\":[");
+				prefix = "";
+				for(int i = 0; i < results.length; i++) 
+				{ 
+					if(results[i] == null) sb.append(prefix).append("null"); 
+					else sb.append(prefix).append(results[i].max); 
+					prefix = ",";
+				}
+
+				sb.append("]}");
+				
+				// Writing results
+		    	Utils.writeJSON(sb, Parameters.JSONFileName);
+				break;
+			case ExtractRow:
+				// Cells to extract values from
+				cellStableIds = null;		
+				if(Parameters.loom_cell_stable_ids != null) {
+					loom = new LoomFile("r", Parameters.loom_cell_stable_ids);
+					if(!loom.exists("/col_attrs/_StableID")) new ErrorJSON("No StableID in this Loom file: " + Parameters.loom_cell_stable_ids);
+					cellStableIds = loom.readLongArray("/col_attrs/_StableID");
+					loom.close();
+				}
+								
+				// Reading Loom with data to extract
+				loom = new LoomFile("r", Parameters.loomFile);
+				cell_indexes = null; // Limit to these cells
 				if(cellStableIds != null) cell_indexes = loom.getCellIndexesByStableIds(cellStableIds);
 				
 				// First check the total dimension of the dataset to extract from
-				long[] dim = loom.getDimensions("/matrix");
-				long nbGenes = dim[0];
-				long nbCells = dim[1];
+				dim = loom.getDimensions();
+				nbGenes = dim[0];
+				nbCells = dim[1];
 				dim = loom.getDimensions(Parameters.iAnnot); // dim[1] = nb of values to extract for each row
 				if(dim.length == 1) { loom.close(); new ErrorJSON("The dataset is not a matrix, it's an array. You should use ExtractMetadata instead"); }
 				if(dim[1] == nbGenes && cellStableIds != null) { loom.close(); new ErrorJSON("You cannot request this dataset and specify -loom_cells"); }

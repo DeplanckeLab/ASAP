@@ -21,6 +21,7 @@ public enum Mode
 	DimensionReduction,
 	IndexByCell,
 	GetIndex,
+	GetGeneStats,
 	ExtractRow,
 	ExtractCol,
 	ExtractDataset,

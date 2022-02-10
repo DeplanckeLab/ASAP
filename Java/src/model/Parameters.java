@@ -189,6 +189,9 @@ public class Parameters
 			case GetIndex:
 				loadGetIndex(args);
 				break;
+			case GetGeneStats:
+				loadGetGeneStats(args);
+				break;
 			case ExtractRow:
 				loadExtractRow(args);
 				break;
@@ -592,6 +595,93 @@ public class Parameters
 			printHelp(Mode.CreateGODB);
 			new ErrorJSON("Please specify an output folder using -o option");
 		}
+	}
+	
+	public static void loadGetGeneStats(String[] args)
+	{
+		for(int i = 0; i < args.length; i++) 
+		{
+			String arg = args[i];
+			if(arg.startsWith("-"))
+			{
+				switch(arg)
+				{
+					case "-o":
+						i++;
+						JSONFileName = args[i];
+						JSONFileName = JSONFileName.replaceAll("\\\\", "/");
+						if(new File(JSONFileName).isDirectory()) new ErrorJSON("'-o' should be followed by a JSON file name, not a folder name.");
+						break;
+					case "--loom":
+						i++;
+						loomFile = args[i];
+						loomFile = loomFile.replaceAll("\\\\", "/");
+						if(new File(loomFile).isDirectory()) new ErrorJSON("'-loom' should be followed by a Loom file name, not a folder name.");
+						break;
+					case "--iAnnot":
+						i++;
+						iAnnot = args[i];
+						if(!iAnnot.startsWith("/")) iAnnot = "/" + iAnnot;
+						break;
+					case "--indexes":
+						i++;
+						if(args[i].equals("")) new ErrorJSON("The --indexes option should be followed by positive Long value(s).");
+						try
+						{
+							String[] tokens = args[i].split(",");
+							indexes = new long[tokens.length];
+							for(int k = 0; k < tokens.length; k++) 
+							{
+								indexes[k] = Long.parseLong(tokens[k]);
+								if(indexes[k] < 0) new ErrorJSON("The '--indexes' option should be followed by positive Long value(s). You entered " + indexes[k]);
+							}
+						}
+						catch(NumberFormatException nfe)
+						{
+							new ErrorJSON("The '--indexes' option should be followed by positive Long value(s). You entered " + args[i]);
+						}
+						break;
+					case "--stable-ids":
+						i++;
+						if(args[i].equals("")) new ErrorJSON("The --stable-ids option should be followed by positive Long value(s).");
+						try
+						{
+							String[] tokens = args[i].split(",");
+							stable_ids = new long[tokens.length];
+							for(int k = 0; k < tokens.length; k++) 
+							{
+								stable_ids[k] = Long.parseLong(tokens[k]);
+								if(stable_ids[k] < 0) new ErrorJSON("The '--stable-ids' option should be followed by positive Long value(s). You entered " + stable_ids[k]);
+							}
+						}
+						catch(NumberFormatException nfe)
+						{
+							new ErrorJSON("The '--stable_ids' option should be followed by positive Long value(s). You entered " + args[i]);
+						}
+						break;
+					case "--names":
+						i++;
+						if(args[i].equals("")) new ErrorJSON("The '--names' option should be followed by String(s).");
+						names = args[i].split(",");
+						for(int k = 0; k < names.length; k++) names[k] = names[k].trim().toUpperCase(); 
+						break;
+					case "--loom-cells":
+						i++;
+						if(args[i].equals("")) new ErrorJSON("The '--loom-cells' option should be followed by a Loom file name.");
+						loom_cell_stable_ids = args[i];
+						loom_cell_stable_ids = loom_cell_stable_ids.replaceAll("\\\\", "/");
+						if(new File(loom_cell_stable_ids).isDirectory()) new ErrorJSON("'--loom-cells' should be followed by a Loom file name, not a folder name.");
+						break;
+					default:
+						System.err.println("Unused argument: " + arg);
+				}
+			}
+		}
+		if(loomFile == null) new ErrorJSON("Loom file parameter is missing");
+		if(indexes == null && names == null && stable_ids == null) new ErrorJSON("You need to use at least one of the following options --names, --indexes or --stable-ids");
+		if(indexes != null && names != null) new ErrorJSON("Please select whether --indexes or --names options. Not both.");
+		if(indexes != null && stable_ids != null) new ErrorJSON("Please select whether --indexes or --stable-ids options. Not both.");
+		if(names != null && stable_ids != null) new ErrorJSON("Please select whether --stable-ids or --names options. Not both.");
 	}
 	
 	public static void loadExtractRow(String[] args)
@@ -2501,6 +2591,16 @@ public class Parameters
 				System.out.println("-f %s \t\tThe JSON file containing the selected cell indexes.");
 				System.out.println("-meta %s \tPath of the metadata to create.");
 				break;
+			case GetGeneStats:
+				System.out.println("GetGeneStats Mode\n\nOptions:");
+				System.out.println("-o %s \t\t[Optional] Output JSON file.");
+				System.out.println("--loom %s \t[Required] Loom file to read.");
+				System.out.println("--iAnnot %s \t[Optional] Input dataset e.g. '/matrix' (default)");
+				System.out.println("--stable-ids %i [One is required] Stable_id(s) of the row to read (separated by comma if multiple)");
+				System.out.println("--indexes %i \t[One is required] Index(es) of the row to read (separated by comma if multiple)");
+				System.out.println("--names %s \t[One is required] Name(s) of the gene to extract (separated by comma if multiple)");
+				System.out.println("--loom-cells %s [Optional] Loom file of the columns/cells to export");
+				break;
 			case ExtractRow: 
 				System.out.println("ExtractRow Mode\n\nOptions:");
 				System.out.println("-o %s \t[Optional] Output JSON file.");
@@ -2677,7 +2777,6 @@ public class Parameters
 				System.out.println("-o | --output %s \t[Optional] Output JSON file.");
 				System.out.println("--loomIndex %s \t[Required] Loom file containing index");
 				System.out.println("--jsonListCells %s \t[Required] JSON file containing cells to consider");
-
 				break;
 		}
 		System.out.println();
