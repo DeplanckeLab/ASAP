@@ -170,7 +170,7 @@ public class DE
 		        	double[] array1 = new double[listIndexes1.size()];
 		        	for(int j = 0; j < listIndexes1.size(); j++) array1[j] = (subMatrix[x][listIndexes1.get(j)] / depth.get(listIndexes1.get(j))) * Parameters.scale_factor; // Seurat normalization on-the-go
 		        	double[] array2 = new double[listIndexes2.size()];
-		        	for(int j = 0; j < listIndexes2.size(); j++) array2[j] = (subMatrix[x][listIndexes2.get(j)] / depth.get(listIndexes1.get(j))) * Parameters.scale_factor; // Seurat normalization on-the-go
+		        	for(int j = 0; j < listIndexes2.size(); j++) array2[j] = (subMatrix[x][listIndexes2.get(j)] / depth.get(listIndexes2.get(j))) * Parameters.scale_factor; // Seurat normalization on-the-go
 
 					//MannWhitneyTest test = new MannWhitneyTest(toCompute.get(Parameters.group_1), toCompute.get(Parameters.group_2));
 					//pvals[i] = test.exactSP(); // In principle, in R, if there is ties, it should be the "approx" that is computed instead of the "exact"
@@ -317,7 +317,7 @@ public class DE
 	        	double[] array1 = new double[listIndexes1.size()];
 	        	for(int j = 0; j < listIndexes1.size(); j++) array1[j] = (subMatrix[x][listIndexes1.get(j)] / depth.get(listIndexes1.get(j))) * Parameters.scale_factor; // Seurat normalization on-the-go
 	        	double[] array2 = new double[listIndexes2.size()];
-	        	for(int j = 0; j < listIndexes2.size(); j++) array2[j] = (subMatrix[x][listIndexes2.get(j)] / depth.get(listIndexes1.get(j))) * Parameters.scale_factor; // Seurat normalization on-the-go
+	        	for(int j = 0; j < listIndexes2.size(); j++) array2[j] = (subMatrix[x][listIndexes2.get(j)] / depth.get(listIndexes2.get(j))) * Parameters.scale_factor; // Seurat normalization on-the-go
 
 	        	// Update results for this gene
 	        	double mean1 = Utils.mean(array1);

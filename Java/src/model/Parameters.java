@@ -2368,7 +2368,7 @@ public class Parameters
 		if(iAnnot == null) new ErrorJSON("No input dataset is specified, please use the '--iAnnot' option");
 		if(id == -1) new ErrorJSON("No table id is specified for the metadata, please use the '--id' option");
 		if(outputFolder == null) new ErrorJSON("No output folder was specified with '-o' option. Please specify an output folder.");
-		if(outputFolder != null) new File(outputFolder).mkdirs();
+		new File(outputFolder).mkdirs();
 	}
 	
 	public static void loadNormalization(String[] args)
@@ -2759,10 +2759,10 @@ public class Parameters
 				break;
 			case FindMarkers:
 				System.out.println("FindMarkers Mode\n\nOptions:");
-				System.out.println("-o | --output %s \t[Optional] Output folder");
-				System.out.println("--loom %s \t[Required] Input Loom file");
-				System.out.println("--iAnnot %s \t[Required] Input metadata e.g. '/row_attrs/toto'");
-				System.out.println("--id %i \t[Required] Id of the metadata in the table annot (database asap)");
+				System.out.println("-o | --output %s \t[Required] Output folder");
+				System.out.println("--loom %s \t\t[Required] Input Loom file");
+				System.out.println("--iAnnot %s \t\t[Required] Input metadata e.g. '/row_attrs/toto'");
+				System.out.println("--id %i \t\t[Required] Id of the metadata in the table annot (database asap)");
 				break;
 			case IndexByCell:
 				System.out.println("IndexByCell Mode\n\nOptions:");
