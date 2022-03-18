@@ -1,5 +1,6 @@
 package bigarrays;
 
+import java.util.ArrayList;
 import java.util.Iterator;
 
 /**
@@ -65,6 +66,13 @@ public class LongArray64 implements Iterable<Long>
     public long size() 
     {
         return this.size;
+    }
+    
+    public static LongArray64 convertFrom(ArrayList<Long> list)
+    {
+    	LongArray64 array = new LongArray64(list.size());
+    	for(int i = 0; i < list.size(); i++) array.set(i, list.get(i));
+    	return array;
     }
     
 	@Override

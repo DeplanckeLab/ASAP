@@ -744,6 +744,48 @@ public class DBManager
 		return categories;
 	}
 	
+	public static String[] getMetadataCategorie(long id, int index)
+	{
+		String[] res = new String[2];
+		if(index < 1) new ErrorJSON("Index needs to be >= 1");
+		
+		// I perform my request
+		Statement stmt = null;
+		try
+		{
+			stmt = conn.createStatement();
+		
+			String sql = "SELECT list_cat_json,name FROM annots WHERE id="+id;
+			ResultSet rs = stmt.executeQuery(sql);
+			 
+			// I check the results and compare to my gene list
+			if (!rs.next()) new ErrorJSON("No list_cat_json in annots table with id = " + id);
+			else
+			{
+				res[0] = rs.getString("name");
+				String json = rs.getString("list_cat_json");
+				Gson gson = new Gson();
+				String[] cat = gson.fromJson(json, String[].class);
+				if(index > cat.length) new ErrorJSON("Index needs to be < " + (cat.length + 1));
+				res[1] = cat[index - 1];
+			    if(rs.next()) new ErrorJSON("Too many list_cat_json in annots table with id = " + id);
+			}
+		}
+		catch(Exception e)
+		{
+			e.printStackTrace();
+		}
+		finally
+		{
+			try
+			{
+				if(stmt!=null) stmt.close();
+			}
+			catch(SQLException se2){ }// nothing we can do
+		}
+		return res;
+	}
+	
 	public static int getNbCatJSON(String id)
 	{
 		int nbCat = -1;

@@ -256,12 +256,29 @@ public class ASAP
 					cellStableIds = loom.readLongArray("/col_attrs/_StableID");
 					loom.close();
 				}
-								
-				// Reading Loom with data to extract
-				loom = new LoomFile("r", Parameters.loomFile);
+				
+				// Alternatively, using the metadata
 				LongArray64 cell_indexes = null; // Limit to these cells
-				int foundcells = 0;
-				if(cellStableIds != null) 
+				loom = new LoomFile("r", Parameters.loomFile);
+				long foundcells = 0;
+				if(Parameters.id != -1) // Then Parameters.index is also set
+				{
+					// Handle correct DB
+					if(Parameters.debugMode) DBManager.URL = Config.ConfigDEV().getURL("asap2_development"); // Annotations/Metadata are not in same DB
+					else DBManager.URL = Config.ConfigMAIN().getURL("asap2_development");
+									
+					// Recuperate the indexes of all categories for this metadata
+					DBManager.connect();
+					String[] res = DBManager.getMetadataCategorie(Parameters.id, (int)Parameters.index);
+					Parameters.metaName = res[0];
+					Parameters.value = res[1];
+					DBManager.disconnect();
+					
+					// Extract indexes where metadata value matches the input, from Loom
+					cell_indexes = LongArray64.convertFrom(loom.getIndexesWhereValueIs(Parameters.metaName, Parameters.value));
+					foundcells = cell_indexes.size();
+				} 
+				else if(cellStableIds != null) 
 				{
 					cell_indexes = loom.getCellIndexesByStableIds(cellStableIds);
 					for(long i = 0; i < cell_indexes.size(); i++) if(cell_indexes.get(i) != -1) foundcells++;
@@ -294,6 +311,7 @@ public class ASAP
 				
 				// Creating output result struct
 				ResultStats[] results = new ResultStats[Parameters.indexes.length];
+				ResultStats[] results_comp = new ResultStats[Parameters.indexes.length]; // Complementary results
 				
 	    		// Read the values and compute stats
 				for (int i = 0; i < results.length; i++)
@@ -302,13 +320,12 @@ public class ASAP
 					if(index == -1) 
 					{
 						results[i] = null;
+						results_comp[i] = null;
 					}
 					else
 					{
-						ResultStats res = new ResultStats();
-						
 						// Read the gene expressions
-						float[] row = loom.readRow(index, Parameters.iAnnot); // TODO does not work if too big array // TODO handle multiple read in same block
+						float[] row = loom.readRow(index, Parameters.iAnnot); // TODO handle multiple read in same block
 						
 						// In case we need to normalize (by column)
 						if(toNormalize)
@@ -322,30 +339,74 @@ public class ASAP
 						// In case some cells are filtered
 						if(cell_indexes != null) 
 						{
-							float[] filtered_row = new float[foundcells];
+							// 0. Prepare indexes
+							int[] indexes_found = new int[row.length]; // All 0
+							
+							// 1. Main cells
+							float[] filtered_row = new float[(int)foundcells];
 							int index_found_cells = 0;
 							for(long ci = 0; ci < cell_indexes.size(); ci++)
 							{
 								long cellI = cell_indexes.get(ci);
 								if(cellI != -1) 
 								{
-									filtered_row[index_found_cells] = row[(int)cellI]; // TODO does not work if too big array
+									filtered_row[index_found_cells] = row[(int)cellI];
+									index_found_cells++;
+									indexes_found[(int)cellI] = -1; // This one is already counted (for comp.)
+								}
+							}
+							
+							// Compute stats
+							ResultStats res = new ResultStats();
+							Arrays.sort(filtered_row);
+							res.min = filtered_row[0];
+							res.median = Utils.median(filtered_row, true);
+							res.mean = Utils.mean(filtered_row);
+							res.q1 = Utils.q1(filtered_row, true);
+							res.q3 = Utils.q3(filtered_row, true);
+							res.max = filtered_row[filtered_row.length - 1];
+							if(toNormalize) res.log2p(); // log2(1 + x) if normalized on-the-go (AFTER computing the mean)
+							results[i] = res;
+							
+							// 2. Complementary cells
+							filtered_row = new float[row.length - (int)foundcells];
+							index_found_cells = 0;
+							for(int j = 0; j < indexes_found.length; j++)
+							{
+								if(indexes_found[j] != -1) // If not already counted for the Main cells loop
+								{
+									filtered_row[index_found_cells] = row[j];
 									index_found_cells++;
 								}
 							}
-							row = filtered_row;
+							
+							// Compute stats
+							res = new ResultStats();
+							Arrays.sort(filtered_row);
+							res.min = filtered_row[0];
+							res.median = Utils.median(filtered_row, true);
+							res.mean = Utils.mean(filtered_row);
+							res.q1 = Utils.q1(filtered_row, true);
+							res.q3 = Utils.q3(filtered_row, true);
+							res.max = filtered_row[filtered_row.length - 1];
+							if(toNormalize) res.log2p(); // log2(1 + x) if normalized on-the-go (AFTER computing the mean)						
+							results_comp[i] = res;
 						}
-						
-						// Compute stats
-						Arrays.sort(row);
-						res.min = row[0];
-						res.median = Utils.median(row, true);
-						res.mean = Utils.mean(row);
-						res.q1 = Utils.q1(row, true);
-						res.q3 = Utils.q3(row, true);
-						res.max = row[row.length - 1];
-						if(toNormalize) res.log2p(); // log2(1 + x) if normalized on-the-go (AFTER computing the mean)
-						results[i] = res;
+						else
+						{	
+							// Compute stats
+							ResultStats res = new ResultStats();
+							Arrays.sort(row);
+							res.min = row[0];
+							res.median = Utils.median(row, true);
+							res.mean = Utils.mean(row);
+							res.q1 = Utils.q1(row, true);
+							res.q3 = Utils.q3(row, true);
+							res.max = row[row.length - 1];
+							if(toNormalize) res.log2p(); // log2(1 + x) if normalized on-the-go (AFTER computing the mean)
+							results[i] = res;
+							results_comp[i] = null; // No cell filtering
+						}
 					}
 				}
 				
@@ -434,6 +495,60 @@ public class ASAP
 				{ 
 					if(results[i] == null) sb.append(prefix).append("null"); 
 					else sb.append(prefix).append(results[i].max); 
+					prefix = ",";
+				}
+				
+				sb.append("], \"min_comp\":[");
+				prefix = "";
+				for(int i = 0; i < results_comp.length; i++) 
+				{ 
+					if(results_comp[i] == null) sb.append(prefix).append("null"); 
+					else sb.append(prefix).append(results_comp[i].min); 
+					prefix = ",";
+				}
+				
+				sb.append("], \"q1_comp\":[");
+				prefix = "";
+				for(int i = 0; i < results_comp.length; i++) 
+				{ 
+					if(results_comp[i] == null) sb.append(prefix).append("null"); 
+					else sb.append(prefix).append(results_comp[i].q1); 
+					prefix = ",";
+				}
+				
+				sb.append("], \"median_comp\":[");
+				prefix = "";
+				for(int i = 0; i < results_comp.length; i++) 
+				{ 
+					if(results_comp[i] == null) sb.append(prefix).append("null"); 
+					else sb.append(prefix).append(results_comp[i].median); 
+					prefix = ",";
+				}
+
+				sb.append("], \"mean_comp\":[");
+				prefix = "";
+				for(int i = 0; i < results_comp.length; i++) 
+				{ 
+					if(results_comp[i] == null) sb.append(prefix).append("null"); 
+					else sb.append(prefix).append(results_comp[i].mean); 
+					prefix = ",";
+				}
+
+				sb.append("], \"q3_comp\":[");
+				prefix = "";
+				for(int i = 0; i < results_comp.length; i++) 
+				{ 
+					if(results_comp[i] == null) sb.append(prefix).append("null"); 
+					else sb.append(prefix).append(results_comp[i].q3); 
+					prefix = ",";
+				}
+
+				sb.append("], \"max_comp\":[");
+				prefix = "";
+				for(int i = 0; i < results_comp.length; i++) 
+				{ 
+					if(results_comp[i] == null) sb.append(prefix).append("null"); 
+					else sb.append(prefix).append(results_comp[i].max); 
 					prefix = ",";
 				}
 

@@ -58,6 +58,7 @@ public class Parameters
 	public static boolean isIndex = false;
 	public static boolean removeAmbiguous = false;
 	public static String value = null;
+	public static long index = -1;
 	public static boolean sort = false;
 	public static String defaultMissingValue = "-1";
 	public static long randomSeed = 42;
@@ -623,6 +624,30 @@ public class Parameters
 						iAnnot = args[i];
 						if(!iAnnot.startsWith("/")) iAnnot = "/" + iAnnot;
 						break;
+					case "--id":
+						i++;
+						try
+						{
+							id = Long.parseLong(args[i]);
+							if(id < 0) new ErrorJSON("The '--id' option should be followed by a Positive Long. You entered " + args[i]);
+						}
+						catch(NumberFormatException nfe)
+						{
+							new ErrorJSON("The '--id' option should be followed by a Long. You entered " + args[i]);
+						}
+						break;
+					case "--index":
+						i++;
+						try
+						{
+							index = Long.parseLong(args[i]);
+							if(index < 0) new ErrorJSON("The '--index' option should be followed by a Positive Long. You entered " + args[i]);
+						}
+						catch(NumberFormatException nfe)
+						{
+							new ErrorJSON("The '--index' option should be followed by a Long. You've entered " + args[i]);
+						}
+						break;
 					case "--indexes":
 						i++;
 						if(args[i].equals("")) new ErrorJSON("The --indexes option should be followed by positive Long value(s).");
@@ -682,6 +707,12 @@ public class Parameters
 		if(indexes != null && names != null) new ErrorJSON("Please select whether --indexes or --names options. Not both.");
 		if(indexes != null && stable_ids != null) new ErrorJSON("Please select whether --indexes or --stable-ids options. Not both.");
 		if(names != null && stable_ids != null) new ErrorJSON("Please select whether --stable-ids or --names options. Not both.");
+		if(index != -1 || id != -1)
+		{
+			if(index == -1) new ErrorJSON("You used --id, please also set --index value.");
+			if(id == -1) new ErrorJSON("You used --index, please also set --id value.");
+		}
+		if(index != -1 && loom_cell_stable_ids != null) new ErrorJSON("Please select whether --id/--index or --loom-cells options. Not both.");
 	}
 	
 	public static void loadExtractRow(String[] args)
@@ -2600,6 +2631,9 @@ public class Parameters
 				System.out.println("--indexes %i \t[One is required] Index(es) of the row to read (separated by comma if multiple)");
 				System.out.println("--names %s \t[One is required] Name(s) of the gene to extract (separated by comma if multiple)");
 				System.out.println("--loom-cells %s [Optional] Loom file of the columns/cells to export");
+				System.out.println("--metadata %s \t[Optional] Path of input metadata for selecting cells");
+				System.out.println("--index %s\t[Optional] Extract only cells of that value.");
+				System.out.println("--id %i \t[Optional] Id of the metadata in the table annot (database asap)");
 				break;
 			case ExtractRow: 
 				System.out.println("ExtractRow Mode\n\nOptions:");
