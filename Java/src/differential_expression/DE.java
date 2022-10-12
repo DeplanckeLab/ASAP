@@ -167,11 +167,22 @@ public class DE
 		        	// Get indexes
 		        	ArrayList<Integer> listIndexes1 = indexGroupMap.get(g1);
 		        	ArrayList<Integer> listIndexes2 = indexGroupMap.get(-g1);
-		        	double[] array1 = new double[listIndexes1.size()];
-		        	for(int j = 0; j < listIndexes1.size(); j++) array1[j] = (subMatrix[x][listIndexes1.get(j)] / depth.get(listIndexes1.get(j))) * Parameters.scale_factor; // Seurat normalization on-the-go
-		        	double[] array2 = new double[listIndexes2.size()];
-		        	for(int j = 0; j < listIndexes2.size(); j++) array2[j] = (subMatrix[x][listIndexes2.get(j)] / depth.get(listIndexes2.get(j))) * Parameters.scale_factor; // Seurat normalization on-the-go
 
+					// Prepare array
+		        	double[] array1 = new double[listIndexes1.size()];
+		        	double[] array2 = new double[listIndexes2.size()];
+		        	if(Parameters.isCountMatrix) 
+		        	{
+		        		for(int j = 0; j < listIndexes1.size(); j++) array1[j] = (subMatrix[x][listIndexes1.get(j)] / depth.get(listIndexes1.get(j))) * Parameters.scale_factor; // Seurat normalization on-the-go
+		        		for(int j = 0; j < listIndexes2.size(); j++) array2[j] = (subMatrix[x][listIndexes2.get(j)] / depth.get(listIndexes2.get(j))) * Parameters.scale_factor; // Seurat normalization on-the-go
+		        	}
+		        	else
+		        	{
+		        		for(int j = 0; j < listIndexes1.size(); j++) array1[j] = subMatrix[x][listIndexes1.get(j)]; // No normalization
+		        		for(int j = 0; j < listIndexes2.size(); j++) array2[j] = subMatrix[x][listIndexes2.get(j)]; // No normalization
+		        	}
+		        	
+		        	
 					//MannWhitneyTest test = new MannWhitneyTest(toCompute.get(Parameters.group_1), toCompute.get(Parameters.group_2));
 					//pvals[i] = test.exactSP(); // In principle, in R, if there is ties, it should be the "approx" that is computed instead of the "exact"
 					
@@ -179,8 +190,16 @@ public class DE
 		        	float[][] res = results.get(g1);
 		        	double mean1 = Utils.mean(array1);
 		        	double mean2 = Utils.mean(array2);
-		        	res[0][i] = (float)(Utils.log2(1 + mean1) - Utils.log2(1 + mean2));
-		        	res[1][i] = (float)test.mannWhitneyUTest(Utils.log2p(array1), Utils.log2p(array2)); // This one does not give exactly the same results as R, but is muchhhhhh faster than the JSC on
+		        	if(Parameters.isCountMatrix) 
+		        	{
+		        		res[0][i] = (float)(Utils.log2(1 + mean1) - Utils.log2(1 + mean2));
+		        	   	res[1][i] = (float)test.mannWhitneyUTest(Utils.log2p(array1), Utils.log2p(array2)); // This one does not give exactly the same results as R, but is muchhhhhh faster than the JSC on
+		        	}
+		        	else
+		        	{
+		        		res[0][i] = (float)(mean1 - mean2); // TODO If it's not log2... it's stupid...
+		        	   	res[1][i] = (float)test.mannWhitneyUTest(array1, array2); // This one does not give exactly the same results as R, but is muchhhhhh faster than the JSC on
+		        	}
 		        	res[3][i] = (float)mean1;
 		        	res[4][i] = (float)mean2;
 		        	results.put(g1, res);
@@ -315,15 +334,31 @@ public class DE
 				
 				// Prepare array
 	        	double[] array1 = new double[listIndexes1.size()];
-	        	for(int j = 0; j < listIndexes1.size(); j++) array1[j] = (subMatrix[x][listIndexes1.get(j)] / depth.get(listIndexes1.get(j))) * Parameters.scale_factor; // Seurat normalization on-the-go
 	        	double[] array2 = new double[listIndexes2.size()];
-	        	for(int j = 0; j < listIndexes2.size(); j++) array2[j] = (subMatrix[x][listIndexes2.get(j)] / depth.get(listIndexes2.get(j))) * Parameters.scale_factor; // Seurat normalization on-the-go
-
+	        	if(Parameters.isCountMatrix) 
+	        	{
+	        		for(int j = 0; j < listIndexes1.size(); j++) array1[j] = (subMatrix[x][listIndexes1.get(j)] / depth.get(listIndexes1.get(j))) * Parameters.scale_factor; // Seurat normalization on-the-go
+	        		for(int j = 0; j < listIndexes2.size(); j++) array2[j] = (subMatrix[x][listIndexes2.get(j)] / depth.get(listIndexes2.get(j))) * Parameters.scale_factor; // Seurat normalization on-the-go
+	        	}
+	        	else
+	        	{
+	        		for(int j = 0; j < listIndexes1.size(); j++) array1[j] = subMatrix[x][listIndexes1.get(j)]; // No normalization
+	        		for(int j = 0; j < listIndexes2.size(); j++) array2[j] = subMatrix[x][listIndexes2.get(j)]; // No normalization
+	        	}
+	        	        	
 	        	// Update results for this gene
 	        	double mean1 = Utils.mean(array1);
 	        	double mean2 = Utils.mean(array2);
-	        	results[0][i] = (float)(Utils.log2(1 + mean1) - Utils.log2(1 + mean2));
-	        	results[1][i] = (float)test.mannWhitneyUTest(Utils.log2p(array1), Utils.log2p(array2)); // This one does not give exactly the same results as R, but is muchhhhhh faster than the JSC on
+	        	if(Parameters.isCountMatrix) 
+	        	{
+	        		results[0][i] = (float)(Utils.log2(1 + mean1) - Utils.log2(1 + mean2));
+	        	   	results[1][i] = (float)test.mannWhitneyUTest(Utils.log2p(array1), Utils.log2p(array2)); // This one does not give exactly the same results as R, but is muchhhhhh faster than the JSC on
+	        	}
+	        	else
+	        	{
+	        		results[0][i] = (float)(mean1 - mean2); // TODO If it's not log2... it's stupid...
+	        		results[1][i] = (float)test.mannWhitneyUTest(array1, array2); // This one does not give exactly the same results as R, but is muchhhhhh faster than the JSC on				
+	        	}
 	        	results[3][i] = (float)mean1;
 	        	results[4][i] = (float)mean2;
 				
@@ -336,6 +371,20 @@ public class DE
 		
 		// FDR calculation
 		results[2] = Utils.p_adjust_F(results[1], "fdr");
+		
+		// Check how many are significant
+		int pos_signif = 0;
+		int neg_signif = 0;
+		for(int i = 0; i < results[2].length; i++)
+		{
+			if(results[2][i] <= 0.05)
+			{
+				if(results[0][i] > 1) pos_signif++;
+				if(results[0][i] < -1) neg_signif++;
+			}
+		}
+		System.out.println(pos_signif + " up-regulated genes");
+		System.out.println(neg_signif + " down-regulated genes");
 		
 		// Write results in Loom file
 		loom = new LoomFile("r+", Parameters.loomFile);

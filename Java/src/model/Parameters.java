@@ -23,6 +23,7 @@ public class Parameters
 	public static final int defaultChunkY = 64;
 	
 	// Shared
+	public static boolean isCountMatrix = true;
 	public static boolean scientific = false;
 	public static String organism_S = null;
 	public static String outputFolder = null;
@@ -2322,7 +2323,13 @@ public class Parameters
 						default:
 							new ErrorJSON("The entered model, "+args[i]+ ", does not exist!\nIt should be one of the following: [wilcox-asap]");
 						}
-						break;				
+						break;
+					case "--is_count_table":
+						i++;
+						if(args[i].equals("false")) isCountMatrix = false;
+						else if(args[i].equals("true")) isCountMatrix = true;
+						else new ErrorJSON("The parameter '--is_count_table' should be followed by one of the following: [true, false]");
+						break;
 					default:
 						System.err.println("Unused argument: " + arg);
 				}
@@ -2389,6 +2396,12 @@ public class Parameters
 						{
 							new ErrorJSON("The '--id' option should be followed by a Long. You entered " + args[i]);
 						}
+						break;
+					case "--is_count_table":
+						i++;
+						if(args[i].equals("false")) isCountMatrix = false;
+						else if(args[i].equals("true")) isCountMatrix = true;
+						else new ErrorJSON("The parameter '--is_count_table' should be followed by one of the following: [true, false]");
 						break;
 					default:
 						System.err.println("Unused argument: " + arg);
@@ -2681,14 +2694,15 @@ public class Parameters
 				break;
 			case DifferentialExpression: 
 				System.out.println("Differential Expression Mode\n\nOptions:");
-				System.out.println("-o %s \t\tOutput folder.");
+				System.out.println("-o %s \t\t\tOutput folder.");
 				System.out.println("-loom %s \t\tLoom file to annotate.");
-				System.out.println("-m %s \t\tModel to use for differential expression. It should be one of the following: [wilcox-asap]");
+				System.out.println("-m %s \t\t\tModel to use for differential expression. It should be one of the following: [wilcox-asap]");
 				System.out.println("-iAnnot %s \t\tInput dataset e.g. '/matrix'");
 				System.out.println("-oAnnot %s \t\tOutput metadata for results");
 				System.out.println("-gAnnot %s \t\tGroup metadata.");
-				System.out.println("-g1 %s \t\tReference group.");
-				System.out.println("-g2 %s \t\tComparison group.");
+				System.out.println("-g1 %s \t\t\tReference group.");
+				System.out.println("-g2 %s \t\t\tComparison group.");
+				System.out.println("--is_count_table %s \tSay if the count matrix is raw counts (integer) and should be logged: [true, false]");
 				break;
 			case Normalization: 
 				System.out.println("Normalization Mode\n\nOptions:");
@@ -2797,6 +2811,7 @@ public class Parameters
 				System.out.println("--loom %s \t\t[Required] Input Loom file");
 				System.out.println("--iAnnot %s \t\t[Required] Input metadata e.g. '/row_attrs/toto'");
 				System.out.println("--id %i \t\t[Required] Id of the metadata in the table annot (database asap)");
+				System.out.println("--is_count_table %s \tSay if the count matrix is raw counts (integer) and should be logged: [true, false]");
 				break;
 			case IndexByCell:
 				System.out.println("IndexByCell Mode\n\nOptions:");

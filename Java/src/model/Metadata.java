@@ -77,6 +77,7 @@ public class Metadata
 	{
 		if(this.categories == null) return false;
 		if(this.categories.size() > 500) return false;
+		if(this.categories.size() < 10) return true; // For small datasets
 		return this.categories.size() <= length * 0.10;
 	}
 	

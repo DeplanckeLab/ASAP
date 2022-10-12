@@ -47,6 +47,8 @@ public class ASAP
 		DBManager.JDBC_DRIVER = Config.driver;
 		DBManager.URL = Config.ConfigMAIN().getURL("asap2_data_v5");
 		
+		if(args.length == 0) readMode(args);
+		
 		// Check if debug mode
 		String[] args2 = isDebug(args);
 		if(Parameters.debugMode) DBManager.URL = Config.ConfigDEV().getURL("asap2_data_v5");
