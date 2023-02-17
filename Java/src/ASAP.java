@@ -1186,6 +1186,24 @@ public class ASAP
 	    		// Writing results
 				Utils.writeJSON(sb, Parameters.outputFile);
 				break;
+			case RenameMetaData:			
+				// Open in writing mode and remove the metadata
+				loom = new LoomFile("r+", Parameters.loomFile);
+				
+				// Rename Metadata
+				loom.renameMetadata(Parameters.metaName, Parameters.metaName2);
+				
+				// Close Loom file
+				loom.close();
+				
+				// Preparing results
+				sb = new StringBuilder("{\"meta-from\":");
+				sb.append("\"").append(Parameters.metaName).append("\",\"meta-to\":\"").append(Parameters.metaName2).append("\"");
+				sb.append("}");
+
+	    		// Writing results
+				Utils.writeJSON(sb, Parameters.outputFile);
+				break;
 			case CreateCellSelection:		
 				// Read Selected Cells in JSON
 				long[] selectedIndexes = FilterCellsJSON.parseJSON(Parameters.JSONFileName).selected_cells; // TODO if too many are selected, this does not work

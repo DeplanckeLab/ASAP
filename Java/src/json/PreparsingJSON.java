@@ -4,7 +4,9 @@ import java.io.BufferedWriter;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Set;
 
+import model.Metadata;
 import model.Parameters;
 import parsing.model.FileType;
 import parsing.model.GroupPreparse;
@@ -36,7 +38,34 @@ public class PreparsingJSON
     		new ErrorJSON(ioe.getMessage());
     	}
     }
-	       
+    
+    /** 
+     * Creating the JSON of the Preparsing step for H5AD files
+     * @param groups Matrices found in file (X, raw.X, raw/X)
+     * @param geneMetadata Gene Metadata found in file (/var and /varm)
+     * @param cellMetadata Cell Metadata found in file (/obs and /obsm)
+     * @param ignoredMetadata Gene & Cell Metadata found in file but ignored for parsing (/varp /obsp and others)
+     */
+    public static void writeH5ADOutputJSON(ArrayList<GroupPreparse> groups, Set<Metadata> okMetadata, Set<Metadata> otherMetadata)
+    {
+    	// Prepare String
+    	StringBuilder sb = new StringBuilder();
+	    sb.append("{\"detected_format\":\"").append(Parameters.fileType).append("\",");
+    	sb.append("\"list_groups\":").append(toString(groups)).append(",").append(Metadata.toString(okMetadata, "metadata")).append(",").append(Metadata.toString(otherMetadata, "other_metadata")).append("}");
+    	
+        // Write output JSON
+        try
+        {      	
+    		BufferedWriter bw = new BufferedWriter(new FileWriter(Parameters.outputFolder + "output.json"));
+        	bw.write(sb.toString());
+        	bw.close();
+    	}
+    	catch(IOException ioe)
+    	{
+    		new ErrorJSON(ioe.getMessage());
+    	}
+    }
+   
     /**
      * If archive containing multiple files
      * First: Just list the files

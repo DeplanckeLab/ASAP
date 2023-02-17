@@ -124,9 +124,14 @@ public class Metadata
 	
 	public static StringBuilder toString(Collection<Metadata> meta)
 	{
+		return toString(meta, "metadata");
+	}
+	
+	public static StringBuilder toString(Collection<Metadata> meta, String name)
+	{
 		StringBuilder sb = new StringBuilder();
 		String prefixT = "";
-		sb.append("\"metadata\":[");
+		sb.append("\""+name+"\":[");
     	for(Metadata m:meta) 
     	{
     		sb.append(prefixT);

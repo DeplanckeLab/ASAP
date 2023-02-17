@@ -29,6 +29,7 @@ public enum Mode
 	ExtractMetadata,
 	MatchValues,
 	RemoveMetaData,
+	RenameMetaData,
 	CopyMetaData,
 	FilterCols,
 	FilterRows,

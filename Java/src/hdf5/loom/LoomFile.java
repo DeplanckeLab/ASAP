@@ -354,6 +354,16 @@ public class LoomFile
 		if(this.handle.object().exists(path)) ((IHDF5Writer)this.handle).object().delete(path);
 		else { this.close(); new ErrorJSON("This metadata (" + path + ") is not found in the Loom file"); }
 	}
+	
+	public void renameMetadata(String path_from, String path_to)
+	{
+		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
+		if(this.readOnly) { this.close(); new ErrorJSON("Cannot delete from Read-Only file"); }
+		if(this.handle.object().exists(path_to)) { this.close(); new ErrorJSON("This metadata (" + path_to + ") already exists in Loom file."); }
+		if(!this.handle.object().exists(path_from)) { this.close(); new ErrorJSON("This metadata (" + path_from + ") is not found in the Loom file"); }
+		if(this.handle.object().isGroup(path_from)) { this.close(); new ErrorJSON("This metadata (" + path_from + ") is a GROUP."); }
+		((IHDF5Writer)this.handle).object().move(path_from, path_to);
+	}
 
 	public ArrayList<Long> getIndexesWhereValueIs(String path, String value)
 	{

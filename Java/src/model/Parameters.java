@@ -46,6 +46,7 @@ public class Parameters
 	public static String loom_cell_stable_ids = null;
 	public static String[] names = null;
 	public static String metaName = null;
+	public static String metaName2 = null;
 	public static MetaOn which = null;
 	public static Metatype metatype = null;
 	public static Metatype[] metatypes = null;
@@ -214,6 +215,9 @@ public class Parameters
 				break;
 			case RemoveMetaData:
 				loadRemoveMetadata(args);
+				break;
+			case RenameMetaData:
+				loadRenameMetadata(args);
 				break;
 			case CopyMetaData:
 				loadCopyMetadata(args);
@@ -1282,6 +1286,53 @@ public class Parameters
 			printHelp(Mode.RemoveMetaData);
 			new ErrorJSON("Please specify a metadata using -meta or -metaJSON option");
 		}
+	}
+	
+	public static void loadRenameMetadata(String[] args)
+	{
+		for(int i = 0; i < args.length; i++) 
+		{
+			String arg = args[i];
+			if(arg.startsWith("-"))
+			{
+				switch(arg)
+				{
+					case "--loom":
+						i++;
+						try
+						{
+							loomFile = args[i].replaceAll("\\\\", "/");
+							File c = new File(loomFile);
+							if(!c.exists()) new ErrorJSON("No file at path " + loomFile);
+							if(!c.isFile()) new ErrorJSON(loomFile + " is not a file");
+						}
+						catch(Exception e)
+						{
+							new ErrorJSON("The '-loom' option should be followed by Loom file path. " + e.getMessage() + ". You entered " + args[i]);
+						}
+						break;
+					case "--meta-from":
+						i++;
+						metaName = args[i];
+						break;
+					case "--meta-to":
+						i++;
+						metaName2 = args[i];
+						break;
+					case "-o":
+						i++;
+						outputFile = args[i];
+						outputFile = outputFile.replaceAll("\\\\", "/");
+						if(new File(outputFile).isDirectory()) new ErrorJSON("'-o' should be followed by a JSON file name, not a folder name.");
+						break;
+					default:
+						System.err.println("Unused argument: " + arg);
+				}
+			}
+		}
+		if(loomFile == null) new ErrorJSON("Please specify a loom file using the '--loom' option");
+		if(metaName == null) new ErrorJSON("Please specify metadata using the '--meta-from' option");
+		if(metaName2 == null) new ErrorJSON("Please specify metadata using the '--meta-to' option");
 	}
 	
 	public static void loadCopyMetadata(String[] args)
@@ -2771,6 +2822,13 @@ public class Parameters
 				System.out.println("-loom %s \t[Required] Loom file to modify.");
 				System.out.println("-meta %s \t[Required or -metaJSON] Full path of the metadata to remove.");
 				System.out.println("-metaJSON %s \t[Required or -meta] JSON file containing full path of metadata(s) to remove.");
+				break;
+			case RenameMetaData:
+				System.out.println("RenameMetaData Mode\n\nOptions:");
+				System.out.println("--loom %s \t[Required] Loom file to read & write from.");
+				System.out.println("--meta-from %s \t[Required] Full path of the metadata to rename (existing)");
+				System.out.println("--meta-to %s \t[Required] Full path of the metadata to rename (to create");
+				System.out.println("-o %s \t\t[Optional] Output JSON file containing metadata that were actually renamed.");
 				break;
 			case CopyMetaData:
 				System.out.println("CopyMetaData Mode\n\nOptions:");
