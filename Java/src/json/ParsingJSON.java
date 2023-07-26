@@ -60,13 +60,13 @@ public class ParsingJSON
     	sb.append("\"nber_not_found_genes\":").append(data.nber_not_found_genes).append(",");
     	sb.append("\"nber_zeros\":").append(data.nber_zeros).append(",");
     	if(data.is_count_table && empty_columns != 0) sb.append("\"empty_columns\":").append(empty_columns).append(",");
-    	sb.append("\"is_count_table\":").append(data.is_count_table?1:0).append(",");	
+    	sb.append("\"is_count_table\":").append(data.is_count_table?1:0);	
     	
     	// Handle Metadata generated
-        sb.append(Metadata.toString(data.meta));
+    	if(data.meta != null) sb.append(",").append(Metadata.toString(data.meta));
         
         // Handle eventual additional metadata
-        sb.append(Metadata.toString(data.existing_meta, "existing_metadata"));
+        if(data.existing_meta != null) sb.append(",").append(Metadata.toString(data.existing_meta, "existing_metadata"));
         
         // End
         sb.append("}");

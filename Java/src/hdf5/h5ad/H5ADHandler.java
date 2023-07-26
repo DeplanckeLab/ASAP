@@ -233,6 +233,7 @@ public class H5ADHandler
 					m.size = json.loom.getSizeInBytes(output_path);
 				}
 				flag_copied = true;
+				m.path = output_path;
 				break;
 			case INTEGER:
 				if(dim.length == 0) // Not an array => single value
@@ -252,6 +253,7 @@ public class H5ADHandler
 					m.size = json.loom.getSizeInBytes(output_path);
 				}
 				flag_copied = true;
+				m.path = output_path;
 				break;
 			case STRING:
 				if(dim.length == 0) // Not an array => single value
@@ -269,6 +271,7 @@ public class H5ADHandler
 					m.size = json.loom.getSizeInBytes(output_path);
 				}
 				flag_copied = true;
+				m.path = output_path;
 				break;
 			default:
 				m.type = Metatype.NOT_HANDLED;
