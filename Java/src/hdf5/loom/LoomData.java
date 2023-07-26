@@ -11,6 +11,7 @@ import model.Metadata;
 
 public class LoomData 
 {
+	public ArrayList<Metadata> existing_meta = null;
 	public ArrayList<Metadata> meta = null;
 
 	// Summary infos

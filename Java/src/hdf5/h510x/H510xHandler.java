@@ -107,7 +107,7 @@ public class H510xHandler
 				if( k > json.data.nber_cells) k = json.data.nber_cells;
 				
 				// Then extract the necessary data (& convert to dense matrix in the process)
-				float[][] subMatrix = pr.readSubMatrix(nbBlocks * Parameters.defaultChunkX, k, json);
+				float[][] subMatrix = pr.readSubMatrix(nbBlocks * Parameters.defaultChunkX, k, json, true);
 						
 				// Writing this merged block to output
 				json.loom.writeFloatBlockDataset("/matrix", subMatrix, 0, nbBlocks);

@@ -32,7 +32,12 @@ public class ParsingJSON
 		message = null;
 	}
 	
-    public void writeOutputJSON()
+	public void writeOutputJSON()
+	{
+		writeOutputJSON(true);
+	}
+	
+    public void writeOutputJSON(boolean doSize)
     {
     	int empty_columns = 0;
     	if(data.is_count_table)
@@ -43,7 +48,7 @@ public class ParsingJSON
 	    	}
     	}
 
-    	data.meta.forEach((m)->m.size = loom.getSizeInBytes(m.path));
+    	if(doSize) data.meta.forEach((m)->m.size = loom.getSizeInBytes(m.path));
     	
     	// Prepare String
     	StringBuilder sb = new StringBuilder();
@@ -56,8 +61,15 @@ public class ParsingJSON
     	sb.append("\"nber_zeros\":").append(data.nber_zeros).append(",");
     	if(data.is_count_table && empty_columns != 0) sb.append("\"empty_columns\":").append(empty_columns).append(",");
     	sb.append("\"is_count_table\":").append(data.is_count_table?1:0).append(",");	
+    	
     	// Handle Metadata generated
-        sb.append(Metadata.toString(data.meta)).append("}");
+        sb.append(Metadata.toString(data.meta));
+        
+        // Handle eventual additional metadata
+        sb.append(Metadata.toString(data.existing_meta, "existing_metadata"));
+        
+        // End
+        sb.append("}");
         	
         // Write output JSON
         try

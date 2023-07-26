@@ -1312,8 +1312,8 @@ public class LoomFile
 			    			{
 								float value = subMatrix[i][y];
 								
-								if(data.is_count_table && Math.abs(value - Math.round(value)) > 1E-5) data.is_count_table = false;
-									
+								data.is_count_table = data.is_count_table && Utils.isInteger(value);
+								
 				    			// Handle biotype count per cell
 				    			String biotype = data.biotypes.get(i_filt_index);
 				    			if(biotype.equals("protein_coding")) data.proteinCodingContent.set(j, data.proteinCodingContent.get(j) + value);
@@ -1406,8 +1406,8 @@ public class LoomFile
 								
 								float value = subMatrix[x][j];
 								
-								if(data.is_count_table && Math.abs(value - Math.round(value)) > 1E-5) data.is_count_table = false;
-									
+								data.is_count_table = data.is_count_table && Utils.isInteger(value);
+								
 				    			// Handle biotype count per cell
 				    			String biotype = data.biotypes.get(i);
 				    			if(biotype.equals("protein_coding")) data.proteinCodingContent.set(j_filt_index, data.proteinCodingContent.get(j_filt_index) + value);
@@ -1506,8 +1506,8 @@ public class LoomFile
 			    			{
 								int value = subMatrix[i][y];
 								
-								if(data.is_count_table && Math.abs(value - Math.round(value)) > 1E-5) data.is_count_table = false;
-									
+								data.is_count_table = data.is_count_table && Utils.isInteger(value);
+								
 				    			// Handle biotype count per cell
 				    			String biotype = data.biotypes.get(i_filt_index);
 				    			if(biotype.equals("protein_coding")) data.proteinCodingContent.set(j, data.proteinCodingContent.get(j) + value);
@@ -1605,8 +1605,8 @@ public class LoomFile
 								
 								int value = subMatrix[x][j];
 								
-								if(data.is_count_table && Math.abs(value - Math.round(value)) > 1E-5) data.is_count_table = false;
-									
+								data.is_count_table = data.is_count_table && Utils.isInteger(value);
+								
 				    			// Handle biotype count per cell
 				    			String biotype = data.biotypes.get(i);
 				    			if(biotype.equals("protein_coding")) data.proteinCodingContent.set(j_filt_index, data.proteinCodingContent.get(j_filt_index) + value);
@@ -2077,7 +2077,7 @@ public class LoomFile
     					tmp = Parameters.defaultMissingValue; // In case there is a missing value
     				}
     				float value = Float.parseFloat(tmp.replaceAll(",", "."));
-    				if(isInteger && (int)value != value) isInteger = false; 
+    				isInteger = isInteger && Utils.isInteger(value);
     				array.set(i, value);
     			}
     			if(missing != 0) WarningJSON.addWarning(missing + " missing values replaced by " + Parameters.defaultMissingValue + " for metadata " + m.path);

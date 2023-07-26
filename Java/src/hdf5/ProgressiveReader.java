@@ -1,16 +1,20 @@
 package hdf5;
 
 import bigarrays.LongArray64;
+import ch.systemsx.cisd.hdf5.HDF5DataClass;
 import ch.systemsx.cisd.hdf5.IHDF5Reader;
 import json.ErrorJSON;
 import json.ParsingJSON;
 import model.Parameters;
+import tools.Utils;
 
 public class ProgressiveReader 
 {
 	private IHDF5Reader reader = null;
+	private String path = null;
 	private int dataBlockSize = -1;
 	private int indicesBlockSize = -1;
+	private HDF5DataClass type = HDF5DataClass.INTEGER;
 	
 	public LongArray64 indptr = null; // column indexes 'indptr', required for recreating the dense matrix
 	
@@ -27,19 +31,28 @@ public class ProgressiveReader
 	
 	public ProgressiveReader(IHDF5Reader reader, long nbGenes, long nbCells, int blockSizeX, int blockSizeY) 
 	{
+		this(reader, "/" + Parameters.selection, nbGenes, nbCells, blockSizeX, blockSizeY);
+	}
+	
+	public ProgressiveReader(IHDF5Reader reader, String path, long nbGenes, long nbCells, int blockSizeX, int blockSizeY) 
+	{
+		this.path = path;
 		this.reader = reader;
 		this.blockSizeX = blockSizeX;
-		this.dataBlockSize = this.reader.getDataSetInformation("/" + Parameters.selection + "/data").tryGetChunkSizes()[0];
-		this.indicesBlockSize = this.reader.getDataSetInformation("/" + Parameters.selection + "/indices").tryGetChunkSizes()[0];
+		this.dataBlockSize = this.reader.getDataSetInformation(this.path + "/data").tryGetChunkSizes()[0];
+	
+		this.type = reader.getDataSetInformation(this.path + "/data").getTypeInformation().getDataClass();
+		if(this.type == HDF5DataClass.STRING) new ErrorJSON("Cannot process a matrix of String: " + this.path);
+		
+		this.indicesBlockSize = this.reader.getDataSetInformation(this.path + "/indices").tryGetChunkSizes()[0];
 		this.nbGenes = nbGenes;
 		this.nbCells = nbCells;
 		
 		// Read the column indexes 'indptr', required for recreating the dense matrix
-		this.indptr = readLong("/" + Parameters.selection + "/indptr"); // This one should have reasonable size (nb cells), so we load it totally
+		this.indptr = readLong(this.path + "/indptr"); // This one should have reasonable size (nb cells), so we load it totally
 		
 		// How many blocks to process?
 		this.nbTotalBlocks = (int)Math.ceil((double)this.nbCells / blockSizeX);
-		//System.out.println("Writing & Parsing " + nbTotalBlocks + " independent blocks");
 	}
 	
 	private LongArray64 readLong(String path)
@@ -52,7 +65,7 @@ public class ProgressiveReader
 		return res;
 	}
 	
-	public float[][] readSubMatrix(long start, long end, ParsingJSON json) // From cols start to end && all rows
+	public float[][] readSubMatrix(long start, long end, ParsingJSON json, boolean doMeta) // From cols start to end && all rows
 	{
 		// Create the submatrix to return
 		float[][] submatrix = new float[(int)this.nbGenes][blockSizeX];
@@ -62,24 +75,29 @@ public class ProgressiveReader
 		{	
 			for(long x = indptr.get(j); x < indptr.get(j+1); x++) // x varies accross genes ( rows )
 			{
-				float value = getData(x);
+				float value = -1;
+				if(type == HDF5DataClass.FLOAT) value = getDataF(x);
+				else if(type == HDF5DataClass.INTEGER) value = getData(x);
 				int i = getIndices(x); // Original index
 				
 				// Put the value in the matrix
 				submatrix[i][(int)(j - start)] = value; // i - start should always be in int range (because chunk size is int)
 				
-				// Process with annotations
-				if(json.data.is_count_table && Math.abs(value - Math.round(value)) > 1E-5) json.data.is_count_table = false;
-				
-				// Handle biotype count per cell
-				String biotype = json.data.biotypes.get(i);
-				if(biotype.equals("protein_coding")) json.data.proteinCodingContent.set(j, json.data.proteinCodingContent.get(j) + value);
-				else if(biotype.equals("rRNA")) json.data.ribosomalContent.set(j, json.data.ribosomalContent.get(j) + value);
-				if(json.data.chromosomes.get(i).equals("MT")) json.data.mitochondrialContent.set(j, json.data.mitochondrialContent.get(j) + value);
-    				
-    			// Generate the sums
-				json.data.depth.set(j, json.data.depth.get(j) + value);
-				json.data.sum.set(i, json.data.sum.get(i) + value);
+				if(doMeta)
+				{
+					// Process with annotations
+					json.data.is_count_table = json.data.is_count_table && Utils.isInteger(value);
+					
+					// Handle biotype count per cell
+					String biotype = json.data.biotypes.get(i);
+					if(biotype.equals("protein_coding")) json.data.proteinCodingContent.set(j, json.data.proteinCodingContent.get(j) + value);
+					else if(biotype.equals("rRNA")) json.data.ribosomalContent.set(j, json.data.ribosomalContent.get(j) + value);
+					if(json.data.chromosomes.get(i).equals("MT")) json.data.mitochondrialContent.set(j, json.data.mitochondrialContent.get(j) + value);
+	    				
+	    			// Generate the sums
+					json.data.depth.set(j, json.data.depth.get(j) + value);
+					json.data.sum.set(i, json.data.sum.get(i) + value);
+				}
 			}
 		}
 		
@@ -91,7 +109,8 @@ public class ProgressiveReader
 		currentDataBlockRead++;
 		if(dataBlocks == null) dataBlocks = new Block(0, dataBlockSize - 1);
 		else dataBlocks = new Block(dataBlocks.end + 1, dataBlocks.end + dataBlockSize);
-		dataBlocks.values = reader.int32().readArrayBlock("/" + Parameters.selection + "/data", dataBlockSize, currentDataBlockRead);
+		if(type == HDF5DataClass.FLOAT) dataBlocks.valuesF = reader.float32().readArrayBlock(this.path + "/data", dataBlockSize, currentDataBlockRead);
+		else if(type == HDF5DataClass.INTEGER) dataBlocks.values = reader.int32().readArrayBlock(this.path + "/data", dataBlockSize, currentDataBlockRead);
 	}
 	
 	private int getData(long index)
@@ -100,12 +119,18 @@ public class ProgressiveReader
 		return dataBlocks.values[(int)(index - dataBlocks.start)];
 	}
 	
+	private float getDataF(long index)
+	{
+		if(dataBlocks == null || dataBlocks.end < index) readNextDataBlock(); // If this index is not yet available, read an additional block
+		return dataBlocks.valuesF[(int)(index - dataBlocks.start)];
+	}
+	
 	private void readNextIndicesBlock()
 	{
 		currentIndicesBlockRead++;
 		if(indicesBlocks == null) indicesBlocks = new Block(0, indicesBlockSize - 1);
 		else indicesBlocks = new Block(indicesBlocks.end + 1, indicesBlocks.end + indicesBlockSize);
-		indicesBlocks.values = reader.int32().readArrayBlock("/" + Parameters.selection + "/indices", indicesBlockSize, currentIndicesBlockRead);
+		indicesBlocks.values = reader.int32().readArrayBlock(this.path + "/indices", indicesBlockSize, currentIndicesBlockRead);
 	}
 	
 	private int getIndices(long index)
@@ -118,6 +143,7 @@ public class ProgressiveReader
 class Block
 {
 	public int[] values;
+	public float[] valuesF;
 	public long start;
 	public long end;
 	

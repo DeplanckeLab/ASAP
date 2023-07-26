@@ -40,6 +40,12 @@ public class Utils
 		rand = new Random(Parameters.randomSeed);
 	}
 	
+	public static boolean isInteger(float f)
+	{
+		if(Math.abs(f - Math.round(f)) > 1E-5) return false;
+		return true;
+	}
+	
 	public static int[] sample(List<Integer> array, int nbTimes) // with replacement
 	{
 		int[] res = new int[nbTimes];

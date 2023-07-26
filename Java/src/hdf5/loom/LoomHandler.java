@@ -14,6 +14,7 @@ import json.PreparsingJSON;
 import model.MapGene;
 import model.Parameters;
 import parsing.model.GroupPreparse;
+import tools.Utils;
 
 public class LoomHandler 
 {
@@ -28,9 +29,11 @@ public class LoomHandler
 	    	g.nbGenes = info.getDimensions()[0];
 	    	g.nbCells = info.getDimensions()[1];
 	    	g.matrix = reader.float32().readMatrixBlock("/matrix", 10, 10, 0, 0); // First is nb row, Second is nb col, two others are offsets I suppose?      
+	    	g.isCount = true;
 	    	for (int i = 0; i < g.matrix.length; i++) {
 				for (int j = 0; j < g.matrix[i].length; j++) {
-					if(g.matrix[i][j] != (int)g.matrix[i][j]) { g.isCount = false; break;}
+					g.isCount = g.isCount && Utils.isInteger(g.matrix[i][j]);
+					if(!g.isCount) break;
 				}
 			}
 	    	if(reader.exists("/col_attrs/CellID")) 

@@ -129,6 +129,7 @@ public class Metadata
 	
 	public static StringBuilder toString(Collection<Metadata> meta, String name)
 	{
+		if(meta == null) return new StringBuilder("");
 		StringBuilder sb = new StringBuilder();
 		String prefixT = "";
 		sb.append("\""+name+"\":[");

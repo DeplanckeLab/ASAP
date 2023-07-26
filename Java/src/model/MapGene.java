@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 
 import hdf5.loom.LoomData;
+import json.ErrorJSON;
 import parsing.model.Gene;
 
 public class MapGene 
@@ -45,8 +46,35 @@ public class MapGene
 	
 	public static void parseGenes(LoomData data) // Parsing all genes
     {
-		for(long i = 0; i < data.nber_genes; i++) parseGene(data, i);
+		try
+		{
+			for(long i = 0; i < data.nber_genes; i++) parseGene(data, i);
+		}
+		catch(IndexOutOfBoundsException iooe)
+		{
+			new ErrorJSON(iooe.getMessage());
+		}
     }
+	
+	/***
+	 * 
+	 * @param gene
+	 * @return 1 if Ensembl, 0 if Gene, -1 if 10 first were not found in any DB
+	 */
+	public static int isEnsembl(String[] gene)
+	{
+		for(int i = 0; i < 10; i++) // Check the 10 first genes max
+		{
+			ArrayList<Gene> dbHit = MapGene.ensembl_db.get(gene[i].toUpperCase()); // First test the Ensembl DB
+			if(dbHit != null) return 1; // It's an Ensembl ID. So I consider the whole thing to be Ensembl genes.
+			// If not, I check the Gene DB
+			dbHit = MapGene.gene_db.get(gene[i].toUpperCase());
+			if(dbHit != null) return 0; // It's a Gene ID. So I consider the whole thing to be Gene ids
+			// if not found in any DB, I try with the next one
+		}
+		// If I reach here it means that none of the 10 first element was found, in any DB
+		return -1;
+	}
 	
 	public static void parseGene(LoomData data, long index) // Only parsing the ith gene
     {
@@ -59,6 +87,11 @@ public class MapGene
     	ArrayList<Gene> dbHit = null;
     	Gene gHit = null;
     	if(ens != null) dbHit = MapGene.ensembl_db.get(ens.toUpperCase()); // First test the Ensembl ID
+    	if(dbHit == null && ens != null) 
+    	{
+    		dbHit = MapGene.ensembl_db.get(ens.replaceFirst("\\.\\d+", "").toUpperCase()); // Test the ensembl on the geneDB
+    		if(dbHit != null) ens = ens.replaceFirst("\\.\\d+", "");
+    	}
     	if(dbHit == null && ens != null) dbHit = MapGene.gene_db.get(ens.toUpperCase()); // Test the ensembl on the geneDB
     	if(dbHit == null && gene != null) dbHit = MapGene.ensembl_db.get(gene.toUpperCase()); // Test the gene on the EnsemblDB
     	if(dbHit == null && gene != null) dbHit = MapGene.gene_db.get(gene.toUpperCase()); // Else check the HGNC DB

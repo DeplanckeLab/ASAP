@@ -54,6 +54,8 @@ public class Parameters
 	public static boolean displayNames = false;
 	public static boolean displayRowNames = false;
 	public static boolean displayColNames = false;
+	public static String rowNames = null;
+	public static String colNames = null;
 	public static String loomFile = null;
 	public static String loomFile2 = null;
 	public static double idleTime = 0;
@@ -1826,6 +1828,14 @@ public class Parameters
 						selection = args[i];
 						selection = selection.replaceAll("\\\\", "/");
 						break;
+					case "--row-names":
+						i++;
+						rowNames = args[i];
+						break;
+					case "--col-names":
+						i++;
+						colNames = args[i];
+						break;
 					case "-h":
 						i++;
 						DBManager.URL = Config.ConfigMAIN().getURLFromHost(args[i]);
@@ -2035,6 +2045,14 @@ public class Parameters
 						i++;
 						selection = args[i];
 						selection = selection.replaceAll("\\\\", "/");
+						break;
+					case "--row-names":
+						i++;
+						rowNames = args[i];
+						break;
+					case "--col-names":
+						i++;
+						colNames = args[i];
 						break;
 					case "-h":
 						i++;
@@ -2638,6 +2656,8 @@ public class Parameters
 				System.out.println("-header %b \tThe file has a header [true, false].");
 				System.out.println("-sel %s \tIn case of an archive, or a h5 with multiple groups, name of entry to load as a dataset.");
 				System.out.println("-d %s \t\tDelimiter.");
+				System.out.println("--row-names %s\tMetadata to use for row names of main matrix");
+				System.out.println("--col-names %s\tMetadata to use for row names of main matrix");
 				if(Parameters.debugMode) System.out.println("-h %s \t\tTo change specific host (default is " + Config.ConfigDEV().getProperty("mDbHost") + ")");
 				else System.out.println("-h %s \t\tTo change specific host (default is " + Config.ConfigMAIN().getProperty("mDbHost") + ")");
 				break;
@@ -2653,6 +2673,10 @@ public class Parameters
 				System.out.println("-header %b \tThe file has a header [true, false].");
 				System.out.println("-sel %s \tIn case of an archive, or a h5 with multiple groups, name of entry to load as a dataset.");
 				System.out.println("-d %s \t\tDelimiter.");
+				System.out.println("--row-names %s\tMetadata to use for row names of main matrix");
+				System.out.println("--col-names %s\tMetadata to use for col names of main matrix");
+				if(Parameters.debugMode) System.out.println("-h %s \t\tTo change specific host (default is " + Config.ConfigDEV().getProperty("mDbHost") + ")");
+				else System.out.println("-h %s \t\tTo change specific host (default is " + Config.ConfigMAIN().getProperty("mDbHost") + ")");
 				break;
 			case PreparseMetadata: 
 				System.out.println("Preparse Metadata Mode\n\nOptions:");

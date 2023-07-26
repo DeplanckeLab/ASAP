@@ -65,6 +65,9 @@ public class FileParser
     		case LOOM:
     			LoomHandler.parse();
     			break;
+    		case H5AD:
+    			H5ADHandler.parse();
+    			break;
     		default:
     			new ErrorJSON("This file format is not handled.");
     	}
@@ -692,7 +695,7 @@ public class FileParser
         				for(int j = 1; j < g.matrix[i].length + 1; j++)
         				{
         					g.matrix[i][j - 1] = Float.parseFloat(tokens[j].replaceAll(",", "."));
-        					if(g.matrix[i][j - 1] != (int)g.matrix[i][j - 1]) g.isCount = false;
+        					g.isCount = g.isCount && Utils.isInteger(g.matrix[i][j - 1]);
         				}
         				tokens = br.readLine().split(Parameters.delimiter, -1); // limit = -1 to keep trailing empty string
     				}
@@ -712,7 +715,7 @@ public class FileParser
         				for(int j = 0; j < g.matrix[i].length; j++)
         				{
         					g.matrix[i][j] = Float.parseFloat(tokens[j].replaceAll(",", "."));
-        					if(g.matrix[i][j] != (int)g.matrix[i][j]) g.isCount = false;
+        					g.isCount = g.isCount && Utils.isInteger(g.matrix[i][j]);
         				}
         				tokens = br.readLine().split(Parameters.delimiter, -1); // limit = -1 to keep trailing empty string
     				}
@@ -729,7 +732,7 @@ public class FileParser
         				for(int j = 0; j < g.matrix[i].length; j++)
         				{
         					g.matrix[i][j] = Float.parseFloat(tokens[j].replaceAll(",", "."));
-        					if(g.matrix[i][j] != (int)g.matrix[i][j]) g.isCount = false;
+        					g.isCount = g.isCount && Utils.isInteger(g.matrix[i][j]);
         				}
         				tokens = br.readLine().split(Parameters.delimiter, -1); // limit = -1 to keep trailing empty string
     				}
@@ -751,7 +754,7 @@ public class FileParser
         				for(int j = 1; j < g.matrix[i].length + 1; j++)
         				{
          					g.matrix[i][j - 1] = Float.parseFloat(tokens[j].replaceAll(",", "."));
-        					if(g.matrix[i][j - 1] != (int)g.matrix[i][j - 1]) g.isCount = false;
+        					g.isCount = g.isCount && Utils.isInteger(g.matrix[i][j - 1]);
         				}
         				tokens = br.readLine().split(Parameters.delimiter, -1); // limit = -1 to keep trailing empty string
     				}
@@ -767,7 +770,7 @@ public class FileParser
         				for(int j = 0; j < g.matrix[i].length; j++)
         				{
         					g.matrix[i][j] = Float.parseFloat(tokens[j].replaceAll(",", "."));
-        					if(g.matrix[i][j] != (int)g.matrix[i][j]) g.isCount = false;
+        					g.isCount = g.isCount && Utils.isInteger(g.matrix[i][j]);
         				}
         				tokens = br.readLine().split(Parameters.delimiter, -1); // limit = -1 to keep trailing empty string
     				}
@@ -781,7 +784,7 @@ public class FileParser
         				for(int j = 0; j < g.matrix[i].length; j++)
         				{
         					g.matrix[i][j] = Float.parseFloat(tokens[j].replaceAll(",", "."));
-        					if(g.matrix[i][j] != (int)g.matrix[i][j]) g.isCount = false;
+        					g.isCount = g.isCount && Utils.isInteger(g.matrix[i][j]);
         				}
         				tokens = br.readLine().split(Parameters.delimiter, -1); // limit = -1 to keep trailing empty string
     				}
