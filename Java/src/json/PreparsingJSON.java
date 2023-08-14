@@ -4,7 +4,7 @@ import java.io.BufferedWriter;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Set;
+import java.util.List;
 
 import model.Metadata;
 import model.Parameters;
@@ -46,7 +46,7 @@ public class PreparsingJSON
      * @param cellMetadata Cell Metadata found in file (/obs and /obsm)
      * @param ignoredMetadata Gene & Cell Metadata found in file but ignored for parsing (/varp /obsp and others)
      */
-    public static void writeH5ADOutputJSON(ArrayList<GroupPreparse> groups, Set<Metadata> okMetadata, Set<Metadata> otherMetadata)
+    public static void writeH5ADOutputJSON(ArrayList<GroupPreparse> groups, List<Metadata> okMetadata, List<Metadata> otherMetadata)
     {
     	// Prepare String
     	StringBuilder sb = new StringBuilder();

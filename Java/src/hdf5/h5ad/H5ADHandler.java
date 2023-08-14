@@ -3,14 +3,14 @@ package hdf5.h5ad;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 import bigarrays.StringArray64;
 import ch.systemsx.cisd.hdf5.HDF5DataClass;
+import ch.systemsx.cisd.hdf5.HDF5DataSetInformation;
 import ch.systemsx.cisd.hdf5.HDF5Factory;
 import ch.systemsx.cisd.hdf5.IHDF5Reader;
-import hdf.hdf5lib.exceptions.HDF5JavaException;
 import hdf5.ProgressiveReader;
+import hdf5.loom.LoomData;
 import hdf5.loom.LoomFile;
 import json.ErrorJSON;
 import json.ParsingJSON;
@@ -68,119 +68,120 @@ public class H5ADHandler
 	
 	public static void parse()
 	{
-		try
+		System.out.println("Parsing the h5ad file...");
+		if(Parameters.selection.endsWith("/")) Parameters.selection = Parameters.selection.substring(0, Parameters.selection.length() - 1);
+		
+		ParsingJSON json = new ParsingJSON(); // Do NOT init the matrix in RAM
+		IHDF5Reader reader = HDF5Factory.openForReading(Parameters.fileName); // Here, it is not a Loom file
+		
+		// 1. First handle the gene annotation
+		if(Parameters.rowNames != null)
 		{
-			System.out.println("Parsing the h5ad file...");
-			ParsingJSON json = new ParsingJSON(); // Do NOT init the matrix in RAM
-			IHDF5Reader reader = HDF5Factory.openForReading(Parameters.fileName); // Here, it is not a Loom file
-			
-			// 1. First handle the gene annotation
-			if(Parameters.rowNames != null)
-			{
-				json.data.original_gene_names = readStringArray(reader, Parameters.rowNames);
-				json.data.ens_names = json.data.original_gene_names.copy();
-				json.data.gene_names = json.data.original_gene_names.copy();
-			}
-			else
-			{
-				// Simply creates the arrays. They will be filled with 'parseGenes' function
-				json.data.original_gene_names = new StringArray64(json.data.nber_genes);
-				json.data.ens_names = new StringArray64(json.data.nber_genes);
-				json.data.gene_names = new StringArray64(json.data.nber_genes);
-			}
-			MapGene.parseGenes(json.data); // Add Info from DB
-			
-			// 2. Then handle the cell names
-			if(Parameters.colNames != null)
-			{
-				json.data.cell_names = readStringArray(reader, Parameters.colNames);
-				for (int i = 0; i < json.data.cell_names.size(); i++) json.data.cell_names.set(i, json.data.cell_names.get(i).trim().replaceAll("'|\"", ""));
-			}
-	    	else
-	    	{
-	    		json.data.cell_names = new StringArray64(json.data.nber_cells);
-	    		for (int i = 0; i < json.data.cell_names.size(); i++) json.data.cell_names.set(i, "Cell_"+(i+1)); // Create fake names if none exist
-	    	}
-			
-			// 3. Check dimensions and cataloging metadata in /var /varm /varp /raw/var (genes) and /obs /obsm /obsp /raw/obs (cells)
-			Set<Metadata> okMetadata = new HashSet<Metadata>();
-			Set<Metadata> otherMetadata = new HashSet<Metadata>();
-	    	listMetadata(reader, okMetadata, otherMetadata, Parameters.nGenes, Parameters.nCells);
-			System.out.println(okMetadata.size() + " metadata imported " + Metadata.toString(okMetadata));
-			System.out.println(otherMetadata.size() + " metadata NOT imported " + Metadata.toString(otherMetadata));
-	    	
-	    	// 4. Second step: Looking for the main matrix
-	    	if(Parameters.selection == null)
-	    	{
-	    		if(reader.exists("/X")) Parameters.selection = "/X";
-	    		else if(reader.exists("/raw.X")) Parameters.selection = "/raw.X";
-	    		else if(reader.exists("/raw/X")) Parameters.selection = "/raw/X";
-	    		else new ErrorJSON("No main Matrix found. Please specify it using '-sel'");
-	    	}
-	    	// Write it in /matrix
-	    	boolean success = writeMatrix(json, reader, Parameters.selection, "/matrix", true);
-	    	if(!success) new ErrorJSON("Could not write the main Matrix (/matrix) from " + Parameters.selection);
-	    	
-	    	// 5. Looking for layers and writing all other potential matrices in layers
-	    	if(reader.exists("/X") && !Parameters.selection.equals("/X")) 
-	    	{
-	    		success = writeMatrix(json, reader, "/X", "/layers/X", false);
-	    		// If not same size as main matrix, success = false
-	    		if(success) okMetadata.add(new Metadata("/layers/X", Metatype.NUMERIC, MetaOn.EXPRESSION_MATRIX, Parameters.nCells, Parameters.nGenes));
-	    	}
-	    	if(reader.exists("/raw.X") && !Parameters.selection.equals("/raw.X")) 
-	    	{
-	    		success = writeMatrix(json, reader, "/raw.X", "/layers/raw.X", false);
-	    		// If not same size as main matrix, success = false
-	    		if(success) okMetadata.add(new Metadata("/layers/raw.X", Metatype.NUMERIC, MetaOn.EXPRESSION_MATRIX, Parameters.nCells, Parameters.nGenes));
-	    	}
-	    	if(reader.exists("/raw/X") && !Parameters.selection.equals("/raw/X"))
-	    	{
-	    		success = writeMatrix(json, reader, "/raw/X", "/layers/raw/X", false);
-	    		// If not same size as main matrix, success = false
-	    		if(success) okMetadata.add(new Metadata("/layers/raw/X", Metatype.NUMERIC, MetaOn.EXPRESSION_MATRIX, Parameters.nCells, Parameters.nGenes));
-
-	    	}
-			if(reader.exists("/layers"))
-			{
-				List <String> m = reader.getGroupMembers("/layers");
-				for(String mem:m) if(!Parameters.selection.equals("/layers/" + mem)) 
-				{
-					success = writeMatrix(json, reader, "/layers/" + mem, "/layers/" + mem, false);
-					if(success) okMetadata.add(new Metadata("/layers/" + mem, Metatype.NUMERIC, MetaOn.EXPRESSION_MATRIX, Parameters.nCells, Parameters.nGenes));
-				}
-			}
-	    	
-	    	// TODO /uns?
-			/*if(reader.exists("/uns"))
-			{
-				m = reader.getGroupMembers("/layers");
-				for(String mem:m) if(!reader.isGroup("/layers/" + mem)) g.additionalMetadataPath.add("/layers/" + mem);
-			}*/
-        	      	
-			// 6. Create metadata array and fill standard metadata (stable_id, depth, gene_names, ...)
-			LoomFile.fillLoomFile(json.loom, json.data);
-			
-			// 7. Add other metadata
-	    	json.data.existing_meta = new ArrayList<>();
-			for(Metadata m:okMetadata)
-			{
-		    	success = copyMetadata(json, reader, m);
-		    	if(success) json.data.existing_meta.add(m);
-			}
-			if(json.data.existing_meta.size() == 0) json.data.existing_meta = null;
-			
-			// Close handle
-			reader.close();				
-			
-			// Write output
-			json.writeOutputJSON(false);
-			json.loom.close();
+			if(!reader.exists(Parameters.rowNames)) new ErrorJSON(Parameters.rowNames + " does not exist in the input H5ad file.");
+			json.data.original_gene_names = readStringArray(reader, Parameters.rowNames);
+			if(json.data.original_gene_names.size() != json.data.nber_genes) new ErrorJSON(Parameters.rowNames + "(" + json.data.original_gene_names.size() + ") is not of the expected size (" + json.data.nber_genes + ")");
+			json.data.ens_names = json.data.original_gene_names.copy();
+			json.data.gene_names = json.data.original_gene_names.copy();
 		}
-		catch(HDF5JavaException e)
+		else
 		{
-			new ErrorJSON(e.getMessage());
+			// Simply creates the arrays. They will be filled with 'parseGenes' function
+			json.data.original_gene_names = new StringArray64(json.data.nber_genes);
+			json.data.ens_names = new StringArray64(json.data.nber_genes);
+			json.data.gene_names = new StringArray64(json.data.nber_genes);
 		}
+		MapGene.parseGenes(json.data); // Add Info from DB
+		
+		// 2. Then handle the cell names
+		if(Parameters.colNames != null)
+		{
+			if(!reader.exists(Parameters.colNames)) new ErrorJSON(Parameters.colNames + " does not exist in the input H5ad file.");
+			json.data.cell_names = readStringArray(reader, Parameters.colNames);
+			if(json.data.cell_names.size() != json.data.nber_cells) new ErrorJSON(Parameters.colNames + "(" + json.data.cell_names.size() + ") is not of the expected size (" + json.data.nber_cells + ")");
+			for (int i = 0; i < json.data.cell_names.size(); i++) json.data.cell_names.set(i, json.data.cell_names.get(i).trim().replaceAll("'|\"", ""));
+		}
+    	else
+    	{
+    		json.data.cell_names = new StringArray64(json.data.nber_cells);
+    		for (int i = 0; i < json.data.cell_names.size(); i++) json.data.cell_names.set(i, "Cell_"+(i+1)); // Create fake names if none exist
+    	}
+		
+		// 3. Cataloging metadata with correct size in /var /varm /varp /raw/var (genes) and /obs /obsm /obsp /raw/obs (cells)
+		List<Metadata> okMetadata = new ArrayList<Metadata>();
+		List<Metadata> otherMetadata = new ArrayList<Metadata>();
+    	listMetadata(reader, okMetadata, otherMetadata, json.data.nber_genes, json.data.nber_cells);
+		System.out.println(okMetadata.size() + " metadata imported " + Metadata.toString(okMetadata));
+		System.out.println(otherMetadata.size() + " metadata NOT imported " + Metadata.toString(otherMetadata));
+    	
+    	// 4. Looking for the main matrix
+    	if(Parameters.selection == null) new ErrorJSON("'-sel' parameter is mandatory for H5ad files");    	
+    	GroupPreparse mainG = checkMatrix(Parameters.selection, reader);
+    	if(mainG == null) new ErrorJSON("'-sel' parameter points to a non-existing or wrongly formatted dataset: " + Parameters.selection);
+    	if(mainG.nbCells != json.data.nber_cells) new ErrorJSON("'-sel "+Parameters.selection+"' has " + mainG.nbCells + " cells, which does not match the '-ncells " + json.data.nber_cells + "' parameter");
+    	if(mainG.nbGenes != json.data.nber_genes) new ErrorJSON("'-sel "+Parameters.selection+"' has " + mainG.nbGenes + " genes, which does not match the '-ngenes " + json.data.nber_genes + "' parameter");
+    	
+    	// Write it in /matrix
+    	boolean success = writeMatrix(json, reader, mainG.name, "/matrix", true);
+    	if(!success) new ErrorJSON("Could not write the main Matrix (/matrix) from " + mainG.name);
+    	
+    	// 5. Looking for other potential matrices and writing them in layers
+    	if(reader.exists("/X") && !Parameters.selection.equals("/X")) 
+    	{
+    		success = writeMatrix(json, reader, "/X", "/layers/X", false);
+    		// If not same size as main matrix, success = false
+    		if(success) okMetadata.add(new Metadata("/layers/X", Metatype.NUMERIC, MetaOn.EXPRESSION_MATRIX, Parameters.nCells, Parameters.nGenes));
+    	}
+    	if(reader.exists("/raw.X") && !Parameters.selection.equals("/raw.X")) 
+    	{
+    		success = writeMatrix(json, reader, "/raw.X", "/layers/raw.X", false);
+    		// If not same size as main matrix, success = false
+    		if(success) okMetadata.add(new Metadata("/layers/raw.X", Metatype.NUMERIC, MetaOn.EXPRESSION_MATRIX, Parameters.nCells, Parameters.nGenes));
+    	}
+    	if(reader.exists("/raw/X") && !Parameters.selection.equals("/raw/X"))
+    	{
+    		success = writeMatrix(json, reader, "/raw/X", "/layers/raw/X", false);
+    		// If not same size as main matrix, success = false
+    		if(success) okMetadata.add(new Metadata("/layers/raw/X", Metatype.NUMERIC, MetaOn.EXPRESSION_MATRIX, Parameters.nCells, Parameters.nGenes));
+    	}
+		if(reader.exists("/layers"))
+		{
+			List <String> m = reader.getGroupMembers("/layers");
+			for(String mem:m) if(!Parameters.selection.equals("/layers/" + mem)) 
+			{
+				success = writeMatrix(json, reader, "/layers/" + mem, "/layers/" + mem, false);
+				if(success) okMetadata.add(new Metadata("/layers/" + mem, Metatype.NUMERIC, MetaOn.EXPRESSION_MATRIX, Parameters.nCells, Parameters.nGenes));
+			}
+		}
+    	
+    	// Should I add /uns stuff? In the main /attrs global metadata maybe?
+		/*if(reader.exists("/uns"))
+		{
+			m = reader.getGroupMembers("/uns");
+			for(String mem:m) if(!reader.isGroup("/uns/" + mem)) g.additionalMetadataPath.add("/uns/" + mem);
+		}*/
+    	      	
+		// 6. Create metadata array and fill standard metadata (stable_id, depth, gene_names, ...)
+		LoomFile.fillLoomFile(json.loom, json.data);
+		
+		// 7. Add other metadata
+    	json.data.existing_meta = new ArrayList<>();
+		for(Metadata m:okMetadata)
+		{
+	    	success = copyMetadata(json, reader, m);
+	    	if(success) 
+	    	{
+	    		m = json.loom.fillInfoMetadata(m.path,true);
+	    		json.data.existing_meta.add(m);
+	    	}
+		}
+		if(json.data.existing_meta.size() == 0) json.data.existing_meta = null;
+		
+		// Close handle
+		reader.close();				
+		
+		// Write output
+		json.writeOutputJSON(false);
+		json.loom.close();
 	}
 	
 	public static boolean copyMetadata(ParsingJSON json, IHDF5Reader reader, Metadata m)
@@ -193,10 +194,6 @@ public class H5ADHandler
 			return true;
 		}
 		
-		// Get dataset infos
-		long[] dim = reader.getDataSetInformation(m.path).getDimensions();
-		boolean flag_copied = false;
-		
 		// Where should we put it
 		String output_path = m.path;
 		String sub_name = m.path.substring(m.path.lastIndexOf("/"));
@@ -204,12 +201,25 @@ public class H5ADHandler
 		else if(m.on == MetaOn.GENE) output_path = "/row_attrs" + sub_name;
 		else new ErrorJSON("What is that? EXPRESSION_MATRIX?"); // EXPRESSION_MATRIX should already been handled
 
-		// If it already exists, it's a system metadata! I don't want to overwrite it
+		// If it already exists, it's a system metadata? I don't want to overwrite it
 		if(json.loom.exists(output_path)) 
 		{
 			System.out.println(output_path + " already in Loom file. Is it a system path? [Discarded]");
 			return false;
 		}
+		
+		// Check if it's a categorical metadata
+		int[] codes = null;
+		if(m.nbCat > 0)
+		{
+			if(!reader.exists(m.path + "/codes")) return false; // This should not happen
+			codes = reader.readIntArray(m.path + "/codes");
+			m.path = m.path + "/categories";
+		}
+		
+		// Get dataset infos
+		long[] dim = reader.getDataSetInformation(m.path).getDimensions();
+		boolean flag_copied = false;
 			
 		// Depending on the data type, we handle it differently
 		HDF5DataClass h5_class =  reader.getDataSetInformation(m.path).getTypeInformation().getDataClass();
@@ -218,17 +228,28 @@ public class H5ADHandler
 			case FLOAT:	
 				if(dim.length == 0) // Not an array => single value
 				{
+					if(codes != null) { System.out.println("Not Handled: " + m.path); return false; }
 					json.loom.writeFloat(output_path, reader.readFloat(m.path));
 				}
 				else if(dim.length > 1 && dim[1] > 0) // Matrix
 				{
+					if(codes != null) { System.out.println("Not Handled: " + m.path); return false; }
 					float[][] values = reader.readFloatMatrix(m.path);
 					json.loom.writeFloatMatrix(output_path, values);
-					m.size = json.loom.getSizeInBytes(output_path);			
+					m.size = json.loom.getSizeInBytes(output_path);
 				}
 				else // Vector
 				{
 					float[] values = reader.readFloatArray(m.path);
+					if(codes != null)
+					{
+						// CATEGORICAL
+						float[] modified_values = new float[codes.length];
+						for(int i = 0; i < modified_values.length; i++) modified_values[i] = values[codes[i]];
+						m.categories = new HashSet<String>();
+						for(float v:values) m.categories.add(""+v);
+						values = modified_values;
+					}
 					json.loom.writeFloatArray(output_path, values);
 					m.size = json.loom.getSizeInBytes(output_path);
 				}
@@ -238,10 +259,12 @@ public class H5ADHandler
 			case INTEGER:
 				if(dim.length == 0) // Not an array => single value
 				{
+					if(codes != null) { System.out.println("Not Handled: " + m.path); return false; }
 					json.loom.writeInt(output_path, reader.readInt(m.path));
 				}
 				else if(dim.length > 1 && dim[1] > 0) // Matrix
 				{
+					if(codes != null) { System.out.println("Not Handled: " + m.path); return false; }
 					int[][] values = reader.readIntMatrix(m.path);
 					json.loom.writeIntMatrix(output_path, values);
 					m.size = json.loom.getSizeInBytes(output_path);			
@@ -249,6 +272,15 @@ public class H5ADHandler
 				else // Vector
 				{
 					int[] values = reader.readIntArray(m.path);
+					if(codes != null)
+					{
+						// CATEGORICAL
+						int[] modified_values = new int[codes.length];
+						for(int i = 0; i < modified_values.length; i++) modified_values[i] = values[codes[i]];
+						m.categories = new HashSet<String>();
+						for(int v:values) m.categories.add(""+v);
+						values = modified_values;
+					}
 					json.loom.writeIntArray(output_path, values);
 					m.size = json.loom.getSizeInBytes(output_path);
 				}
@@ -258,6 +290,7 @@ public class H5ADHandler
 			case STRING:
 				if(dim.length == 0) // Not an array => single value
 				{
+					if(codes != null) { System.out.println("Not Handled: " + m.path); return false; }
 					json.loom.writeString(output_path, reader.readString(m.path));
 				}
 				else if(dim.length > 1 && dim[1] > 0) // Matrix
@@ -267,6 +300,15 @@ public class H5ADHandler
 				else // Vector
 				{
 					String[] values = reader.readStringArray(m.path);
+					if(codes != null)
+					{
+						// CATEGORICAL
+						String[] modified_values = new String[codes.length];
+						for(int i = 0; i < modified_values.length; i++) modified_values[i] = values[codes[i]];
+						m.categories = new HashSet<String>();
+						for(String v:values) m.categories.add(v);
+						values = modified_values;
+					}
 					json.loom.writeStringArray(output_path, values);
 					m.size = json.loom.getSizeInBytes(output_path);
 				}
@@ -280,7 +322,7 @@ public class H5ADHandler
 		return flag_copied;
 	}
 	
-	public static boolean checkSize(IHDF5Reader reader, String path)
+	public static boolean checkSize(IHDF5Reader reader, String path, long nbGenes, long nbCells)
 	{
     	// Check type of matrix
 		if(reader.object().isGroup(path)) // SPARSE 
@@ -288,18 +330,18 @@ public class H5ADHandler
 			int[] shape = null;
 	    	if(reader.object().hasAttribute(path, "shape")) shape = reader.int32().getArrayAttr(path, "shape");
 	    	else new ErrorJSON("Dataset " + path + " is missing the 'shape' parameter"); // It is expected in a H5AD file
-	    	if(shape[0] != Parameters.nCells || shape[1] != Parameters.nGenes)
+	    	if(shape[0] != nbCells || shape[1] != nbGenes)
 	    	{
-	    		System.out.println("Dataset " + path + " is not of the correct size [Ignored]");
+	    		System.out.println(path + ": Not same size [Discarded]");
 	    		return false;
 	    	}
 		}
 		else // DENSE
 		{
 			long[] shape = reader.getDataSetInformation(path).getDimensions();
-			if(shape[0] != Parameters.nGenes || shape[1] != Parameters.nCells)
+			if(shape[0] != nbCells || shape[1] != nbGenes)
 			{
-	    		System.out.println("Dataset " + path + " is not of the correct size [Ignored]");
+				System.out.println(path + ": Not same size [Discarded]");
 	    		return false;
 			}
 		}
@@ -308,22 +350,20 @@ public class H5ADHandler
 	
 	public static boolean writeMatrix(ParsingJSON json, IHDF5Reader reader, String path, String out, boolean isMain)
 	{
+		if(path.endsWith("/")) path = path.substring(0, path.length() - 1);
+		
 		// Getting the size of the dataset from the attributes (is it always here? dunno)
     	String sparse_format = "csr"; // default
 		if(!reader.exists(path)) return false;
 
 		// Check dimensions
-		boolean check = checkSize(reader, path);
+		boolean check = checkSize(reader, path, json.data.nber_genes, json.data.nber_cells);
 		if(!check) 
 		{
-			if(isMain) new ErrorJSON("Dataset " + path + " is not of the expected size: " + Parameters.nGenes + " x " + Parameters.nCells);
+			if(isMain) new ErrorJSON("Dataset " + path + " is not of the expected size: " + json.data.nber_genes + " x " + json.data.nber_cells);
 			return false;
 		}
 		
-		// Prepare the writing in the file
-		// Since this format is not compatible with our chunking specs, we first create a chunked matrix
-		json.loom.createEmptyFloat32MatrixDataset(out, json.data.nber_genes, json.data.nber_cells, Parameters.defaultChunkX, Parameters.defaultChunkY);
-    	
     	// Check type of matrix
 		if(reader.object().isGroup(path)) // SPARSE 
 		{	
@@ -332,14 +372,23 @@ public class H5ADHandler
 			if(!reader.object().isDataSet(path + "/data")) return false;
 			// Properly formatted H5AD sparse matrix
 	    	if(reader.object().hasAttribute(path, "h5sparse_format")) sparse_format = reader.string().getAttr(path, "h5sparse_format");
-	    	if(!sparse_format.equals("csr") && !sparse_format.equals("csc")) new ErrorJSON("Could not read the H5ad file (Sparse Matrix NOT in CSR or CSC format. Reading type not implemented yet. Please contact support.)");
+	    	else if(reader.object().hasAttribute(path, "encoding-type")) sparse_format = reader.string().getAttr(path, "encoding-type");
+	    	if(sparse_format != null && sparse_format.equals("csc_matrix")) sparse_format = "csc";
+	    	if(sparse_format != null && sparse_format.equals("csr_matrix")) sparse_format = "csr";
+	    	if(sparse_format == null || (!sparse_format.equals("csr") && !sparse_format.equals("csc"))) new ErrorJSON("Could not read the H5ad file (Sparse Matrix NOT in CSR or CSC format. Reading type not implemented yet. Please contact support.)");
+	    	// Read matrix
 	    	if(sparse_format.equals("csr")) // CSR
 	    	{
+	    		// Create empty matrix
+	    		json.loom.createEmptyFloat32MatrixDataset(out, json.data.nber_genes, json.data.nber_cells, Parameters.defaultChunkX, Parameters.defaultChunkY);
+	    		
 	    		// Now read the file block per block (1000 cells at a time, all genes)
 				ProgressiveReader pr = new ProgressiveReader(reader, path, json.data.nber_genes, json.data.nber_cells, Parameters.defaultChunkX, Parameters.defaultChunkY);
 				
 				// Use indptr to compute the number of detected genes
-				for(int i = 0; i < pr.indptr.size() - 1; i++) json.data.detected_genes.set(i, (int)(pr.indptr.get(i + 1) - pr.indptr.get(i)));
+				if(isMain) for(int i = 0; i < pr.indptr.size() - 1; i++) json.data.detected_genes.set(i, (int)(pr.indptr.get(i + 1) - pr.indptr.get(i)));
+				
+				// Write Matrix
 				for(int nbBlocks = 0; nbBlocks < pr.nbTotalBlocks; nbBlocks++)
 				{			
 					// First find out the index of the columns
@@ -360,478 +409,399 @@ public class H5ADHandler
 					long nbNonZeroValues = reader.getDataSetInformation(path + "/data").getDimensions()[0]; // Know the actual size of the array
 					json.data.nber_zeros = json.data.nber_cells * json.data.nber_genes - nbNonZeroValues;
 				}
-	    		
-	        	/*int nGenes = (int)Math.min(10, g.nbGenes);
-	        	int nCells = (int)Math.min(10, g.nbCells);
-	        	g.matrix = new float[nGenes][nCells]; // Dense matrix to be computed from sparse format
-		        // Read 3 datasets required for recreating the dense matrix     
-		        long[] indptr = reader.int64().readArrayBlock(path + "/indptr", nCells + 1, 0); // submatrix [0, ncol+1]
-		        long[] indices = reader.int64().readArrayBlock(path + "/indices", (int)indptr[indptr.length - 1], 0); // submatrix [0, ncol] // TODO if the index is too big, this fails
-		        float[] data = reader.float32().readArrayBlock(path + "/data", (int)indptr[indptr.length - 1], 0); // TODO if the index is too big, this fails
-		        // Fill the dense matrix with values != 0
-		        for(int i = 0; i < nCells; i++)
-				{
-					for(long j = indptr[i]; j < indptr[i+1]; j++)
-					{
-						if(indices[(int)j] < nGenes) 
-						{
-							//if(data[(int)j] != (int)data[(int)j]) g.isCount = false; 
-							if(Utils.isCount())
-							g.matrix[(int)indices[(int)j]][i] = data[(int)j]; // TODO if the index is too big, this fails
-						}
-					}
-				}*/
 	    	}
 	    	else if(sparse_format.equals("csc")) // CSC
 	    	{
-	        	/*int nGenes = (int)Math.min(10, g.nbGenes);
-	        	int nCells = (int)Math.min(10, g.nbCells);
-	        	g.matrix = new float[nGenes][nCells]; // Dense matrix to be computed from sparse format
-		        // Read 3 datasets required for recreating the dense matrix     
-		        long[] indptr = reader.int64().readArrayBlock(path + "/indptr", nCells + 1, 0); // submatrix [0, ncol+1]
-		        long[] indices = reader.int64().readArrayBlock(path + "/indices", (int)indptr[indptr.length - 1], 0); // submatrix [0, ncol] // TODO if the index is too big, this fails
-		        float[] data = reader.float32().readArrayBlock(path + "/data", (int)indptr[indptr.length - 1], 0); // TODO if the index is too big, this fails
-		        // Fill the dense matrix with values != 0
-		        for(int i = 0; i < nGenes; i++)
-				{
-					for(long j = indptr[i]; j < indptr[i+1]; j++)
-					{
-						if(indices[(int)j] < nCells) 
-						{
-							//if(data[(int)j] != (int)data[(int)j]) g.isCount = false;
-							if(Utils.isCount())
-							g.matrix[i][(int)indices[(int)j]] = data[(int)j]; // TODO if the index is too big, this fails
-						}
-					}
-				}*/
+	    		// TODO Handle this...
+	    		if(isMain) new ErrorJSON("[FORMAT] This file contains a dataset ("+path+") in the 'CSC' sparse format, which is not handled. Please use a newer version of AnnData to submit your H5AD file.");
+	    		System.out.println(path+": Dataset in the 'CSC' sparse format, which is not handled [Discarded]");
+	    		return false;
 	    	}
 		}
 		else // DENSE
 		{
-	    	// Original file block sizes is kept (easier to perform the copy)
-	    	//int[] blockSize = loom.getChunkSizes();
-	    	//if(blockSize[0] / blockSize[1] > 2) LoomFile.copyFloatMatrixByCell("/matrix", loom, json.loom, json.data); // Handling HCA uneven chunks which is uncompatible with our original gene by gene process
-	    	//else LoomFile.copyFloatMatrixByGene("/matrix", loom, json.loom, json.data);
-	    	//loom.close();
+			LoomData data = null;
+			if(isMain) data = json.data;
+	    	copyFloatMatrix(path, reader, out, json.loom, data, json.data.nber_genes, json.data.nber_cells);
 		}			
 		return true;
 	}
 	
+	public static void copyFloatMatrix(String from_path, IHDF5Reader from, String to_path, LoomFile to, LoomData data, long nberGenes, long nberCells)
+	{	   	
+		// Create empty matrix
+		to.createEmptyFloat32MatrixDataset(to_path, nberGenes, nberCells, Parameters.defaultChunkX, Parameters.defaultChunkY);
+		
+		// Read all thing is RAM (LAZYYYYYYYYY)
+		float[][] matrix = Utils.t(from.float32().readMatrix(from_path)); // Transposed
+		
+		// Compute stats if needed (for parsing mainly)
+		if(data != null)
+		{
+			// Parsing Data and generating summary annotations
+			for(int i = 0; i < matrix.length; i++) // Original index of gene
+			{
+				for(int j = 0; j < matrix[0].length; j++) // cells
+				{
+					float value = matrix[i][j];
+					
+					data.is_count_table = data.is_count_table && Utils.isInteger(value);
+					
+	    			// Handle biotype count per cell
+	    			String biotype = data.biotypes.get(i);
+	    			if(biotype.equals("protein_coding")) data.proteinCodingContent.set(j, data.proteinCodingContent.get(j) + value);
+		    		else if(biotype.equals("rRNA")) data.ribosomalContent.set(j, data.ribosomalContent.get(j) + value);
+	    			if(data.chromosomes.get(i).equals("MT")) data.mitochondrialContent.set(j, data.mitochondrialContent.get(j) + value);
+	        			
+	        		// Generate the sums
+	    			data.depth.set(j, data.depth.get(j) + value);
+	    			data.sum.set(i, data.sum.get(i) + value);
+						
+					// Number of zeroes / detected genes 
+					if(value == 0) data.nber_zeros++;
+					else data.detected_genes.set(j, data.detected_genes.get(j) + 1);
+				}
+			}
+		}
+		
+		// Write Matrix
+		to.writeFloatMatrixChunked(to_path, matrix);
+	}
+	
     public static void preparse()
     {
-    	try
+		IHDF5Reader reader = HDF5Factory.openForReading(Parameters.fileName);
+    	ArrayList<GroupPreparse> foundDatasets = new ArrayList<GroupPreparse>();
+    	
+    	// Metadata are shared for all matrices (not stored in GroupPreparse object)
+		List<Metadata> okMetadata = new ArrayList<Metadata>();
+		List<Metadata> otherMetadata = new ArrayList<Metadata>();
+    	   		
+    	// 1. First step: Looking for the main matrices
+		GroupPreparse mainG = null;
+    	GroupPreparse g = checkMatrix("/X", reader);
+    	if(g != null) foundDatasets.add(g);
+    	g = checkMatrix("/raw.X", reader);
+    	if(g != null) foundDatasets.add(g);
+    	g = checkMatrix("/raw/X", reader); // Backward compatible
+    	if(g != null) foundDatasets.add(g);
+
+    	// 2. Find which matrix to load as Main (/matrix)
+    	if(foundDatasets.size() == 0)
     	{
-    		IHDF5Reader reader = HDF5Factory.openForReading(Parameters.fileName);
-	    	ArrayList<GroupPreparse> foundDatasets = new ArrayList<GroupPreparse>();
-	    	
-	    	// Metadata are shared for all matrices (not stored in GroupPreparse object)
-			Set<Metadata> okMetadata = new HashSet<Metadata>();
-			Set<Metadata> otherMetadata = new HashSet<Metadata>();
-	    	
-			/// 1. First step: infer dimensions and cataloging metadata
-	    	long[] res = listMetadata(reader, okMetadata, otherMetadata, -1, -1);
-	    	long nbGenes = res[0];
-	    	long nbCells = res[1];
-	    			
-			/// 1.5 Intermediary step: Looking for cell/gene names
-			String[] colNames = null;
-			String[] rowNames = null;
-    		if(Parameters.colNames != null) colNames = reader.string().readArrayBlock(Parameters.colNames, 10, 0);
-    		if(Parameters.rowNames != null) rowNames = reader.string().readArrayBlock(Parameters.rowNames, 10, 0);
-			
-	    	/// 2. Second step: Looking for the main matrices
-	    	GroupPreparse g = null;
-	    	g = readMatrix("/X", reader, nbGenes, nbCells); // Should be the main matrix
-	    	if(g != null) 
-	    	{
-	    		g.cellNames = colNames;
-	    		g.geneNames = rowNames;
-	    		foundDatasets.add(g);
-	    	}
-	    	g = readMatrix("/raw.X", reader, nbGenes, nbCells);
-	    	if(g != null) 
-	    	{
-	    		g.cellNames = colNames;
-	    		g.geneNames = rowNames;
-	    		foundDatasets.add(g);
-	    	}
-	    	g = readMatrix("/raw/X", reader, nbGenes, nbCells); // Backward compatible
-	    	if(g != null) 
-	    	{
-	    		g.cellNames = colNames;
-	    		g.geneNames = rowNames;
-	    		foundDatasets.add(g);
-	    	}
-	    	        	      	
-			// Close handle
 			reader.close();
-        	
-        	// Write output
-        	PreparsingJSON.writeH5ADOutputJSON(foundDatasets, okMetadata, otherMetadata);
+        	new ErrorJSON("No Matrix found in h5ad file?");
     	}
-		catch(HDF5JavaException e)		{
-			new ErrorJSON(e.getMessage());
+    	else if(Parameters.selection == null && foundDatasets.size() > 1)
+    	{
+			// If multiple matrices without any selected one, finish the preparsing
+			reader.close();
+        	PreparsingJSON.writeH5ADOutputJSON(foundDatasets, okMetadata, otherMetadata);
+        	return;
+    	}
+    	else if(Parameters.selection == null && foundDatasets.size() == 1)
+    	{
+    		// Only one matrix to load
+    		mainG = foundDatasets.get(0);
+    		Parameters.selection = mainG.name;
+    	}
+    	else
+    	{
+    		// Only remaining case: Parameters.selection != null
+    		if(Parameters.selection.endsWith("/")) Parameters.selection = Parameters.selection.substring(0, Parameters.selection.length() - 1);
+    		for(GroupPreparse gp:foundDatasets)
+    		{
+    			if(gp.name.equals(Parameters.selection)) mainG = gp;
+    		}
+    	}
+    	if(mainG == null) new ErrorJSON("The selected path is no a viable matrix in the h5ad file: " + Parameters.selection);
+    	System.out.println("Found dataset: " + mainG.name);
+    	
+    	// 3. Cataloging metadata
+    	listMetadata(reader, okMetadata, otherMetadata, mainG.nbGenes, mainG.nbCells);
+    			
+		// 3.5. Intermediary step: Looking for cell/gene names
+		String[] colNames = null;
+		String[] rowNames = null;
+		if(Parameters.colNames != null) 
+		{
+			if(!reader.exists(Parameters.colNames)) new ErrorJSON(Parameters.colNames + " does not exist. Please change the '--col-names' parameter");
+			long[] dim = reader.getDataSetInformation(Parameters.colNames).getDimensions();
+			if(dim[0] != mainG.nbCells) new ErrorJSON(Parameters.colNames + " is not of the same size as the main matrix. Please change the '--col-names' parameter");
+			colNames = reader.string().readArrayBlock(Parameters.colNames, 10, 0);
 		}
+		if(Parameters.rowNames != null) 
+		{
+			if(!reader.exists(Parameters.rowNames)) new ErrorJSON(Parameters.rowNames + " does not exist. Please change the '--row-names' parameter");
+			long[] dim = reader.getDataSetInformation(Parameters.rowNames).getDimensions();
+			if(dim[0] != mainG.nbGenes) new ErrorJSON(Parameters.rowNames + " is not of the same size as the main matrix. Please change the '--row-names' parameter");
+			rowNames = reader.string().readArrayBlock(Parameters.rowNames, 10, 0);
+		}
+		
+		// 4. Reading the main matrix
+		foundDatasets = new ArrayList<>();
+		mainG = readMatrix(mainG.name, reader, mainG.nbGenes, mainG.nbCells); // Should be the main matrix
+    	if(mainG != null) 
+    	{
+    		mainG.cellNames = colNames;
+    		mainG.geneNames = rowNames;
+    		foundDatasets.add(mainG);
+    	}
+      	
+		// Close handle
+		reader.close();
+    	
+    	// Write output
+    	PreparsingJSON.writeH5ADOutputJSON(foundDatasets, okMetadata, otherMetadata);
     }
     
-    private static long[] listMetadata(IHDF5Reader reader, Set<Metadata> okMetadata, Set<Metadata> otherMetadata, long nbGenes, long nbCells)
+    private static boolean sizeOK(Metadata m, long nbGenes, long nbCells)
+    {
+    	if(m.on == MetaOn.GENE && m.nbrow == nbGenes) return true;
+    	if(m.on == MetaOn.CELL && m.nbcol == nbCells) return true;
+    	if(m.on == MetaOn.EXPRESSION_MATRIX && m.nbcol == nbCells && m.nbrow == nbGenes) return true;
+    	return false;
+    }
+    
+    private static void _listMetadataG(String path, MetaOn on, IHDF5Reader reader, List<Metadata> okMetadata, List<Metadata> otherMetadata, long nbGenes, long nbCells)
+    {
+    	if(on != MetaOn.GENE && on != MetaOn.CELL) new ErrorJSON("Not handled");
+    	
+    	if(!path.endsWith("/")) path = path + "/"; // It's a group
+    	
+		List<String> m = reader.getGroupMembers(path);
+		if(m.contains("__categories"))
+		{
+    		new ErrorJSON("[FORMAT] This file contains a group '__categories' which is an old format, which is not handled. Please use a newer version of AnnData to submit your H5AD file.");
+		}
+		for(String mem:m)
+		{
+			if(reader.isGroup(path + mem))
+			{
+				// Subdirectories are taken into account at only 1 depth
+				List<String> m_2 = reader.getGroupMembers(path + mem);
+				if(m_2.contains("categories") && m_2.contains("codes"))
+				{
+					Metadata tmp_m = new Metadata(path + mem);
+					tmp_m.on = on; // Set before this function call (depends on /var /obs ...)
+					
+					// Categorical variable
+					if(!reader.isGroup(path + mem + "/categories") && !reader.isGroup(path + mem + "/codes"))
+					{
+						long[] dim = reader.getDataSetInformation(path + mem + "/codes").getDimensions();
+						
+						// Set nbcol/nbrow
+						if(tmp_m.on == MetaOn.GENE) 
+						{
+							tmp_m.nbrow = dim[0];
+							if(dim.length > 1) tmp_m.nbcol = dim[1];
+							else tmp_m.nbcol = 1;
+						}
+						else if(tmp_m.on == MetaOn.CELL)
+						{
+							tmp_m.nbcol = dim[0];
+							if(dim.length > 1) tmp_m.nbrow = dim[1];
+							else tmp_m.nbrow = 1;
+						}
+						
+						// Retrieve extra information
+						dim = reader.getDataSetInformation(path + mem + "/categories").getDimensions();
+						tmp_m.nbCat = (int)dim[0];
+						if(sizeOK(tmp_m, nbGenes, nbCells)) okMetadata.add(tmp_m);
+						else 
+						{
+							System.out.println(tmp_m.path + ": Not same size [Discarded]");
+							otherMetadata.add(tmp_m);
+						}
+					}
+					else
+					{
+						System.out.println(tmp_m.path + ": categories/codes found, but groups? [Discarded]"); 
+						otherMetadata.add(tmp_m);
+					}
+				}
+				else if(m_2.contains("data") && m_2.contains("indices") && m_2.contains("indptr"))
+				{
+					Metadata tmp_m = new Metadata(path + mem);
+					tmp_m.on = on; // Set before this function call (depends on /var /obs ...)
+					System.out.println(tmp_m.path +  ": EXPRESSION_MATRIX found? (Not Handled for now) [Discarded]"); 
+					otherMetadata.add(tmp_m);
+				}
+				else _listMetadata(path + mem, on, reader, okMetadata, otherMetadata, nbGenes, nbCells); // Recursive search
+			}
+			else
+			{
+				Metadata tmp_m = new Metadata(path + mem);
+				tmp_m.on = on;
+				
+				long[] dim = reader.getDataSetInformation(path + mem).getDimensions();
+				
+				// Set correct nbcol/nbrow
+				if(tmp_m.on == MetaOn.GENE) 
+				{
+					tmp_m.nbrow = dim[0];
+					if(dim.length > 1) tmp_m.nbcol = dim[1];
+					else tmp_m.nbcol = 1;
+				}
+				else if(tmp_m.on == MetaOn.CELL)
+				{
+					tmp_m.nbcol = dim[0];
+					if(dim.length > 1) tmp_m.nbrow = dim[1];
+					else tmp_m.nbrow = 1;
+				}
+				
+				// Check size
+				if(sizeOK(tmp_m, nbGenes, nbCells)) okMetadata.add(tmp_m);
+				else 
+				{
+					System.out.println(tmp_m.path + ": Not same size [Discarded]");
+					otherMetadata.add(tmp_m);
+				}
+			}
+		}
+	}
+    
+    private static void _listMetadata(String path, MetaOn on, IHDF5Reader reader, List<Metadata> okMetadata, List<Metadata> otherMetadata, long nbGenes, long nbCells)
+    {
+    	if(reader.isGroup(path)) _listMetadataG(path, on, reader, okMetadata, otherMetadata, nbGenes, nbCells);
+    	else
+    	{
+	    	HDF5DataSetInformation inf = reader.getDataSetInformation(path);
+	    	HDF5DataClass c = inf.getTypeInformation().getDataClass();
+	    	if(c == HDF5DataClass.COMPOUND)
+	    	{
+	    		new ErrorJSON("[FORMAT] This file contains a dataset ("+path+") in the 'COMPOUND' format, which is not handled. Please use a newer version of AnnData to submit your H5AD file.");
+	    	}
+	    	else
+	    	{
+	    		new ErrorJSON("[FORMAT] This file contains datasets in a format which is not handled:" + path);
+	    	}
+    	}
+	}
+    
+    private static void listMetadata(IHDF5Reader reader, List<Metadata> okMetadata, List<Metadata> otherMetadata, long nbGenes, long nbCells)
     {  	
+    	// If Parsing && selection matrix is in /raw/, then we should prioritize the /raw/ metadata
+    	if(Parameters.selection != null && Parameters.selection.startsWith("/raw/"))
+    	{
+    		// Cataloging
+    		if(reader.object().exists("/raw/var")) // Mandatory in this case. For Backward compatibility
+    		{
+    			_listMetadata("/raw/var", MetaOn.GENE, reader, okMetadata, otherMetadata, nbGenes, nbCells);
+    		}
+    	}
+    	
     	// Infer dimensions (Rows = genes) from var
 		if(reader.object().exists("/var")) // Should exist since we've run isH5ADFormatOK()
 		{
-			List<String> m = reader.getGroupMembers("/var");
-			for(String mem:m)
-			{
-				if(reader.isGroup("/var/" + mem))
-				{
-					// Subdirectories are not taken into account (no recursive DFS here, I only list its content)
-					List<String> m_2 = reader.getGroupMembers("/var/" + mem);
-					for(String mem_2:m_2)
-					{
-						String p_2 = "/var/" + mem + "/" + mem_2;
-						Metadata tmp_gene_m = new Metadata(p_2);
-						if(reader.isGroup(p_2)) // I don't list this directory content
-						{
-							tmp_gene_m.nbrow = -1;
-							tmp_gene_m.nbcol = -1;
-						}
-						else
-						{
-							long[] dim = reader.getDataSetInformation(p_2).getDimensions();
-							tmp_gene_m.nbrow = dim[0];
-							if(dim.length > 1) tmp_gene_m.nbcol = dim[1];
-							else tmp_gene_m.nbcol = 1;
-						}
-						tmp_gene_m.on = MetaOn.GENE;
-						otherMetadata.add(tmp_gene_m);
-					}
-				}
-				else
-				{
-					Metadata tmp_gene_m = new Metadata("/var/" + mem); // I take the opportunity to generate the list of metadata :)
-					long[] dim = reader.getDataSetInformation("/var/" + mem).getDimensions();
-					if(dim.length != 1) new ErrorJSON("Type of '/var/" + mem + "' is not a vector (1D)?");
-					if(nbGenes == -1) nbGenes = dim[0];
-					else if(nbGenes != dim[0]) new ErrorJSON("Dimension of '/var/" + mem + "' should be " + nbGenes + ", it's " + dim[0]);
-					tmp_gene_m.on = MetaOn.GENE;
-					tmp_gene_m.nbcol = 1; // It's a vector
-					tmp_gene_m.nbrow = dim[0];
-					okMetadata.add(tmp_gene_m); 
-				}
-			}
-		} else new ErrorJSON("/var path is not found");
-		if(nbGenes == -1) new ErrorJSON("'/var' is empty. Could not estimate number of features (e.g. genes).");
+			_listMetadata("/var", MetaOn.GENE, reader, okMetadata, otherMetadata, nbGenes, nbCells);
+		}
+		else new ErrorJSON("/var path is not found");
 		
-    	// Cataloging and checking dimensions (Columns = cells) for varm
+    	// Cataloging
 		if(reader.object().exists("/varm")) // Not mandatory here. I don't know if it should be mandatory?
 		{
-			List<String> m = reader.getGroupMembers("/varm");
-			for(String mem:m)
-			{
-				if(reader.isGroup("/varm/" + mem))
-				{
-					// Subdirectories are not taken into account (no recursive DFS here, I only list its content)
-					List<String> m_2 = reader.getGroupMembers("/varm/" + mem);
-					for(String mem_2:m_2)
-					{
-						String p_2 = "/varm/" + mem + "/" + mem_2;
-						Metadata tmp_gene_m = new Metadata(p_2);
-						if(reader.isGroup(p_2)) // I don't list this directory content
-						{
-							tmp_gene_m.nbrow = -1;
-							tmp_gene_m.nbcol = -1;
-						}
-						else
-						{
-							long[] dim = reader.getDataSetInformation(p_2).getDimensions();
-							tmp_gene_m.nbrow = dim[0];
-							if(dim.length > 1) tmp_gene_m.nbcol = dim[1];
-							else tmp_gene_m.nbcol = 1;
-						}
-						tmp_gene_m.on = MetaOn.GENE;
-						otherMetadata.add(tmp_gene_m);
-					}
-				}
-				else
-				{
-					Metadata tmp_gene_m = new Metadata("/varm/" + mem); // I generate the list of metadata
-					long[] dim = reader.getDataSetInformation("/varm/" + mem).getDimensions();
-					if(dim.length != 2) new ErrorJSON("Type of '/varm/" + mem + "' is not a matrix (2D)?");
-					if(nbGenes != dim[0]) new ErrorJSON("Dimension of '/varm/" + mem + "' should be " + nbGenes + " x " + dim[1] + " but it's " + dim[0] + " x " + dim[1]);
-					tmp_gene_m.on = MetaOn.GENE;
-					tmp_gene_m.nbcol = dim[1];
-					tmp_gene_m.nbrow = dim[0];
-					okMetadata.add(tmp_gene_m); 
-				}
-			}
+			_listMetadata("/varm", MetaOn.GENE, reader, okMetadata, otherMetadata, nbGenes, nbCells);
 		}
 		
-		// Cataloging and ignoring metadata for varp
+		// Cataloging
 		if(reader.object().exists("/varp")) // Not mandatory here. I don't know if it should be mandatory?
 		{
-			List<String> m = reader.getGroupMembers("/varp");
-			for(String mem:m) // Everything in /varp is ignored for parsing
-			{
-				if(reader.isGroup("/varp/" + mem))
-				{
-					// Subdirectories are not taken into account (no recursive DFS here, I only list its content)
-					List<String> m_2 = reader.getGroupMembers("/varp/" + mem);
-					for(String mem_2:m_2)
-					{
-						String p_2 = "/varp/" + mem + "/" + mem_2;
-						Metadata tmp_gene_m = new Metadata(p_2);
-						if(reader.isGroup(p_2)) // I don't list this directory content
-						{
-							tmp_gene_m.nbrow = -1;
-							tmp_gene_m.nbcol = -1;
-						}
-						else
-						{
-							long[] dim = reader.getDataSetInformation(p_2).getDimensions();
-							tmp_gene_m.nbrow = dim[0];
-							if(dim.length > 1) tmp_gene_m.nbcol = dim[1];
-							else tmp_gene_m.nbcol = 1;
-						}
-						tmp_gene_m.on = MetaOn.GENE;
-						otherMetadata.add(tmp_gene_m);
-					}
-				}
-				else
-				{
-					Metadata tmp_gene_m = new Metadata("/varp/" + mem); // I generate the list of metadata
-					long[] dim = reader.getDataSetInformation("/varp/" + mem).getDimensions();
-					if(dim.length != 2) new ErrorJSON("Type of '/varp/" + mem + "' is not a matrix (2D)?");
-					tmp_gene_m.on = MetaOn.GENE;
-					tmp_gene_m.nbcol = dim[1];
-					tmp_gene_m.nbrow = dim[0];
-					otherMetadata.add(tmp_gene_m); 
-				}
-			}
+			_listMetadata("/varp", MetaOn.GENE, reader, okMetadata, otherMetadata, nbGenes, nbCells);
 		}
 		
-		// Cataloging and ignoring metadata for /raw/var
-		if(reader.object().exists("/raw/var/")) // Not mandatory. For Backward compatibility
-		{
-			List<String> m = reader.getGroupMembers("/raw/var/");
-			for(String mem:m) // Everything in /raw/var is ignored for parsing
+		// Cataloging
+    	if(Parameters.selection == null || !Parameters.selection.startsWith("/raw/"))
+    	{
+			if(reader.object().exists("/raw/var")) // Not mandatory. For Backward compatibility
 			{
-				if(reader.isGroup("/raw/var/" + mem))
-				{
-					// Subdirectories are not taken into account (no recursive DFS here, I only list its content)
-					List<String> m_2 = reader.getGroupMembers("/raw/var/" + mem);
-					for(String mem_2:m_2)
-					{
-						String p_2 = "/raw/var/" + mem + "/" + mem_2;
-						Metadata tmp_gene_m = new Metadata(p_2);
-						if(reader.isGroup(p_2)) // I don't list this directory content
-						{
-							tmp_gene_m.nbrow = -1;
-							tmp_gene_m.nbcol = -1;
-						}
-						else
-						{
-							long[] dim = reader.getDataSetInformation(p_2).getDimensions();
-							tmp_gene_m.nbrow = dim[0];
-							if(dim.length > 1) tmp_gene_m.nbcol = dim[1];
-							else tmp_gene_m.nbcol = 1;
-						}
-						tmp_gene_m.on = MetaOn.GENE;
-						otherMetadata.add(tmp_gene_m);
-					}
-				}
-				else
-				{
-					Metadata tmp_gene_m = new Metadata("/raw/var/" + mem); // I generate the list of metadata
-					long[] dim = reader.getDataSetInformation("/raw/var/" + mem).getDimensions();
-					if(dim.length != 1) new ErrorJSON("Type of '/raw/var/" + mem + "' is not a vector (1D)?");
-					tmp_gene_m.on = MetaOn.GENE;
-					tmp_gene_m.nbcol = 1;
-					tmp_gene_m.nbrow = dim[0];
-					otherMetadata.add(tmp_gene_m); 
-				}
+				_listMetadata("/raw/var", MetaOn.GENE, reader, okMetadata, otherMetadata, nbGenes, nbCells);
 			}
-		}
-		
+    	}
+    	
+    	// If Parsing && selection matrix is in /raw/, then we should prioritize the /raw/ metadata
+    	if(Parameters.selection != null && Parameters.selection.startsWith("/raw/"))
+    	{
+    		// Cataloging
+    		if(reader.object().exists("/raw/obs")) // Not mandatory. For Backward compatibility
+    		{
+    			_listMetadata("/raw/obs", MetaOn.CELL, reader, okMetadata, otherMetadata, nbGenes, nbCells);
+    		}
+    	}
+    	
     	// Infer dimensions (Columns = cells) from obs
 		if(reader.object().exists("/obs")) // Should exist since we've run isH5ADFormatOK()
 		{
-			List<String> m = reader.getGroupMembers("/obs");
-			for(String mem:m)
-			{
-				if(reader.isGroup("/obs/" + mem))
-				{
-					// Subdirectories are not taken into account (no recursive DFS here, I only list its content)
-					List<String> m_2 = reader.getGroupMembers("/obs/" + mem);
-					for(String mem_2:m_2)
-					{
-						String p_2 = "/obs/" + mem + "/" + mem_2;
-						Metadata tmp_cell_m = new Metadata(p_2);
-						if(reader.isGroup(p_2)) // I don't list this directory content
-						{
-							tmp_cell_m.nbrow = -1;
-							tmp_cell_m.nbcol = -1;
-						}
-						else
-						{
-							long[] dim = reader.getDataSetInformation(p_2).getDimensions();
-							tmp_cell_m.nbcol = dim[0];
-							if(dim.length > 1) tmp_cell_m.nbrow = dim[1];
-							else tmp_cell_m.nbrow = 1;
-						}
-						tmp_cell_m.on = MetaOn.CELL;
-						otherMetadata.add(tmp_cell_m);
-					}
-				}
-				else
-				{
-					Metadata tmp_cell_m = new Metadata("/obs/" + mem); // I take the opportunity to generate the list of metadata :)
-					long[] dim = reader.getDataSetInformation("/obs/" + mem).getDimensions();
-					if(dim.length != 1) new ErrorJSON("Type of '/obs/" + mem + "' is not a vector (1D)?");
-					if(nbCells == -1) nbCells = dim[0];
-					else if(nbCells != dim[0]) new ErrorJSON("Dimension of '/obs/" + mem + "' should be " + nbCells + ", it's " + dim[0]);
-					tmp_cell_m.on = MetaOn.CELL;
-					tmp_cell_m.nbcol = dim[0];
-					tmp_cell_m.nbrow = 1; // I's a vector
-					okMetadata.add(tmp_cell_m); // I take the opportunity to generate the list of metadata :)
-				}
-			}
-		} else new ErrorJSON("/obs path is not found");
-		if(nbCells == -1) new ErrorJSON("'/obs' is empty. Could not estimate number of cells.");
+			_listMetadata("/obs", MetaOn.CELL, reader, okMetadata, otherMetadata, nbGenes, nbCells);
+		} 
+		else new ErrorJSON("/obs path is not found");
 		
-    	// Cataloging and checking dimensions (Columns = cells) for obsm
+    	// Cataloging for obsm
 		if(reader.object().exists("/obsm")) // Not mandatory here. I don't know if it should be mandatory?
 		{
-			List<String> m = reader.getGroupMembers("/obsm");
-			for(String mem:m)
-			{
-				if(reader.isGroup("/obsm/" + mem))
-				{
-					// Subdirectories are not taken into account (no recursive DFS here, I only list its content)
-					List<String> m_2 = reader.getGroupMembers("/obsm/" + mem);
-					for(String mem_2:m_2)
-					{
-						String p_2 = "/obsm/" + mem + "/" + mem_2;
-						Metadata tmp_cell_m = new Metadata(p_2);
-						if(reader.isGroup(p_2)) // I don't list this directory content
-						{
-							tmp_cell_m.nbrow = -1;
-							tmp_cell_m.nbcol = -1;
-						}
-						else
-						{
-							long[] dim = reader.getDataSetInformation(p_2).getDimensions();
-							tmp_cell_m.nbcol = dim[0];
-							if(dim.length > 1) tmp_cell_m.nbrow = dim[1];
-							else tmp_cell_m.nbrow = 1;
-						}
-						tmp_cell_m.on = MetaOn.CELL;
-						otherMetadata.add(tmp_cell_m);
-					}
-				}
-				else
-				{
-					Metadata tmp_cell_m = new Metadata("/obsm/" + mem);  // I generate the list of metadata
-					long[] dim = reader.getDataSetInformation("/obsm/" + mem).getDimensions();
-					if(dim.length != 2) new ErrorJSON("Type of '/obsm/" + mem + "' is not a matrix (2D)?");
-					if(nbCells != dim[0]) new ErrorJSON("Dimension of '/obsm/" + mem + "' should be " + nbCells + " x " + dim[1] + " but it's " + dim[0] + " x " + dim[1]);
-					tmp_cell_m.on = MetaOn.CELL;
-					tmp_cell_m.nbcol = dim[0];
-					tmp_cell_m.nbrow = dim[1];
-					okMetadata.add(tmp_cell_m); // I take the opportunity to generate the list of metadata :)
-				}
-			}
-		}
-		
-		// Cataloging and ignoring metadata for obsp
+			_listMetadata("/obsm", MetaOn.CELL, reader, okMetadata, otherMetadata, nbGenes, nbCells);
+		} 
+				
+    	// Cataloging for obsp
 		if(reader.object().exists("/obsp")) // Not mandatory here. I don't know if it should be mandatory?
 		{
-			List<String> m = reader.getGroupMembers("/obsp");
-			for(String mem:m) // Everything in /obsp is ignored for parsing
-			{
-				if(reader.isGroup("/obsp/" + mem))
-				{
-					// Subdirectories are not taken into account (no recursive DFS here, I only list its content)
-					List<String> m_2 = reader.getGroupMembers("/obsp/" + mem);
-					for(String mem_2:m_2)
-					{
-						String p_2 = "/obsp/" + mem + "/" + mem_2;
-						Metadata tmp_cell_m = new Metadata(p_2);
-						if(reader.isGroup(p_2)) // I don't list this directory content
-						{
-							tmp_cell_m.nbrow = -1;
-							tmp_cell_m.nbcol = -1;
-						}
-						else
-						{
-							long[] dim = reader.getDataSetInformation(p_2).getDimensions();
-							tmp_cell_m.nbcol = dim[0];
-							if(dim.length > 1) tmp_cell_m.nbrow = dim[1];
-							else tmp_cell_m.nbrow = 1;
-						}
-						tmp_cell_m.on = MetaOn.CELL;
-						otherMetadata.add(tmp_cell_m);
-					}
-				}
-				else
-				{
-					Metadata tmp_cell_m = new Metadata("/obsp/" + mem); // I generate the list of metadata
-					long[] dim = reader.getDataSetInformation("/obsp/" + mem).getDimensions();
-					if(dim.length != 2) new ErrorJSON("Type of '/obsp/" + mem + "' is not a matrix (2D)?");
-					tmp_cell_m.on = MetaOn.CELL;
-					tmp_cell_m.nbcol = dim[1];
-					tmp_cell_m.nbrow = dim[0];
-					otherMetadata.add(tmp_cell_m); 
-				}
-			}
-		}
+			_listMetadata("/obsp", MetaOn.CELL, reader, okMetadata, otherMetadata, nbGenes, nbCells);
+		} 
 		
-		// Cataloging and ignoring metadata for /raw/obs
-		if(reader.object().exists("/raw/obs")) // Not mandatory. For Backward compatibility
-		{
-			List<String> m = reader.getGroupMembers("/raw/obs");
-			for(String mem:m) // Everything in /raw/obs is ignored for parsing
+    	// Cataloging for /raw/obs
+    	if(Parameters.selection == null || !Parameters.selection.startsWith("/raw/"))
+    	{
+			if(reader.object().exists("/raw/obs")) // Not mandatory here. I don't know if it should be mandatory?
 			{
-				if(reader.isGroup("/raw/obs/" + mem))
-				{
-					// Subdirectories are not taken into account (no recursive DFS here, I only list its content)
-					List<String> m_2 = reader.getGroupMembers("/raw/obs/" + mem);
-					for(String mem_2:m_2)
-					{
-						String p_2 = "/raw/obs/" + mem + "/" + mem_2;
-						Metadata tmp_cell_m = new Metadata(p_2);
-						if(reader.isGroup(p_2)) // I don't list this directory content
-						{
-							tmp_cell_m.nbrow = -1;
-							tmp_cell_m.nbcol = -1;
-						}
-						else
-						{
-							long[] dim = reader.getDataSetInformation(p_2).getDimensions();
-							tmp_cell_m.nbcol = dim[0];
-							if(dim.length > 1) tmp_cell_m.nbrow = dim[1];
-							else tmp_cell_m.nbrow = 1;
-						}
-						tmp_cell_m.on = MetaOn.CELL;
-						otherMetadata.add(tmp_cell_m);
-					}
-				}
-				else
-				{
-					Metadata tmp_cell_m = new Metadata("/raw/obs/" + mem); // I generate the list of metadata
-					long[] dim = reader.getDataSetInformation("/raw/obs/" + mem).getDimensions();
-					if(dim.length != 1) new ErrorJSON("Type of '/raw/obs/" + mem + "' is not a vector (1D)?");
-					tmp_cell_m.on = MetaOn.CELL;
-					tmp_cell_m.nbcol = dim[0];
-					tmp_cell_m.nbrow = 1;
-					otherMetadata.add(tmp_cell_m); 
-				}
-			}
+				_listMetadata("/raw/obs", MetaOn.CELL, reader, okMetadata, otherMetadata, nbGenes, nbCells);
+			} 
+    	}
+    }
+    
+    private static GroupPreparse checkMatrix(String path, IHDF5Reader reader)
+    {
+		if(path.endsWith("/")) path = path.substring(0, path.length() - 1);
+    
+    	// Getting the size of the dataset from the attributes (is it always here? dunno)
+    	String sparse_format = null; // default
+		if(!reader.exists(path)) return null;
+
+    	// Create object to return
+    	GroupPreparse g = new GroupPreparse(path);
+    	
+    	// Check type of matrix
+		if(reader.object().isGroup(path)) 
+		{
+			if(!reader.object().isDataSet(path + "/indices")) return null;
+			if(!reader.object().isDataSet(path + "/indptr")) return null;
+			if(!reader.object().isDataSet(path + "/data")) return null;
+			// Properly formatted H5AD sparse matrix
+	    	if(reader.object().hasAttribute(path, "h5sparse_format")) sparse_format = reader.string().getAttr(path, "h5sparse_format");
+	    	else if(reader.object().hasAttribute(path, "encoding-type")) sparse_format = reader.string().getAttr(path, "encoding-type");
+	    	if(sparse_format != null && sparse_format.equals("csc_matrix")) sparse_format = "csc";
+	    	if(sparse_format != null && sparse_format.equals("csr_matrix")) sparse_format = "csr";
+	    	if(sparse_format == null || (!sparse_format.equals("csr") && !sparse_format.equals("csc"))) return null;
+	    	if(reader.object().hasAttribute(path, "shape")) 
+	    	{
+	    		long[] shape = reader.int64().getMDArrayAttr(path, "shape").getAsFlatArray();
+	    		g.nbCells = shape[0];
+	    		g.nbGenes = shape[1];
+	    	}
+	    	else return null;
 		}
-		return new long[] { nbGenes, nbCells };
+		else // DENSE
+		{
+    		long[] dim = reader.getDataSetInformation(path).getDimensions();
+    		g.nbCells = dim[0];
+    		g.nbGenes = dim[1];
+		}
+		return g;
     }
     
     private static GroupPreparse readMatrix(String path, IHDF5Reader reader, long nbGenes, long nbCells)
     {  	
+    	if(path.endsWith("/")) path = path.substring(0, path.length() - 1);
+    	
     	// Getting the size of the dataset from the attributes (is it always here? dunno)
     	String sparse_format = "csr"; // default
 		if(!reader.exists(path)) return null;
@@ -850,7 +820,10 @@ public class H5ADHandler
 			if(!reader.object().isDataSet(path + "/data")) return null;
 			// Properly formatted H5AD sparse matrix
 	    	if(reader.object().hasAttribute(path, "h5sparse_format")) sparse_format = reader.string().getAttr(path, "h5sparse_format");
-	    	if(!sparse_format.equals("csr") && !sparse_format.equals("csc")) new ErrorJSON("Could not read the H5ad file (Sparse Matrix NOT in CSR or CSC format. Reading type not implemented yet. Please contact support.)");
+	    	else if(reader.object().hasAttribute(path, "encoding-type")) sparse_format = reader.string().getAttr(path, "encoding-type");
+	    	if(sparse_format != null && sparse_format.equals("csc_matrix")) sparse_format = "csc";
+	    	if(sparse_format != null && sparse_format.equals("csr_matrix")) sparse_format = "csr";
+	    	if(sparse_format == null || (!sparse_format.equals("csr") && !sparse_format.equals("csc"))) new ErrorJSON("Could not read the H5ad file (Sparse Matrix NOT in CSR or CSC format. Reading type not implemented yet. Please contact support.)");
 	    	if(sparse_format.equals("csr")) // CSR
 	    	{
 	        	int nGenes = (int)Math.min(10, g.nbGenes);
@@ -858,8 +831,8 @@ public class H5ADHandler
 	        	g.matrix = new float[nGenes][nCells]; // Dense matrix to be computed from sparse format
 		        // Read 3 datasets required for recreating the dense matrix     
 		        long[] indptr = reader.int64().readArrayBlock(path + "/indptr", nCells + 1, 0); // submatrix [0, ncol+1]
-		        long[] indices = reader.int64().readArrayBlock(path + "/indices", (int)indptr[indptr.length - 1], 0); // submatrix [0, ncol] // TODO if the index is too big, this fails
-		        float[] data = reader.float32().readArrayBlock(path + "/data", (int)indptr[indptr.length - 1], 0); // TODO if the index is too big, this fails
+		        long[] indices = reader.int64().readArrayBlock(path + "/indices", (int)indptr[indptr.length - 1], 0); // submatrix [0, ncol]
+		        float[] data = reader.float32().readArrayBlock(path + "/data", (int)indptr[indptr.length - 1], 0);
 		        // Fill the dense matrix with values != 0
 		        for(int i = 0; i < nCells; i++)
 				{
@@ -868,7 +841,7 @@ public class H5ADHandler
 						if(indices[(int)j] < nGenes) 
 						{
 							g.isCount = g.isCount && Utils.isInteger(data[(int)j]);
-							g.matrix[(int)indices[(int)j]][i] = data[(int)j]; // TODO if the index is too big, this fails
+							g.matrix[(int)indices[(int)j]][i] = data[(int)j];
 						}
 					}
 				}
@@ -880,9 +853,8 @@ public class H5ADHandler
 	        	g.matrix = new float[nGenes][nCells]; // Dense matrix to be computed from sparse format
 		        // Read 3 datasets required for recreating the dense matrix     
 		        long[] indptr = reader.int64().readArrayBlock(path + "/indptr", nCells + 1, 0); // submatrix [0, ncol+1]
-		        long[] indices = reader.int64().readArrayBlock(path + "/indices", (int)indptr[indptr.length - 1], 0); // submatrix [0, ncol] // TODO if the index is too big, this fails
-		        float[] data = reader.float32().readArrayBlock(path + "/data", (int)indptr[indptr.length - 1], 0); // TODO if the index is too big, this fails
-		        // Fill the dense matrix with values != 0
+		        long[] indices = reader.int64().readArrayBlock(path + "/indices", (int)indptr[indptr.length - 1], 0);
+		        float[] data = reader.float32().readArrayBlock(path + "/data", (int)indptr[indptr.length - 1], 0);
 		        for(int i = 0; i < nGenes; i++)
 				{
 					for(long j = indptr[i]; j < indptr[i+1]; j++)
@@ -890,7 +862,7 @@ public class H5ADHandler
 						if(indices[(int)j] < nCells) 
 						{
 							g.isCount = g.isCount && Utils.isInteger(data[(int)j]);
-							g.matrix[i][(int)indices[(int)j]] = data[(int)j]; // TODO if the index is too big, this fails
+							g.matrix[i][(int)indices[(int)j]] = data[(int)j];
 						}
 					}
 				}

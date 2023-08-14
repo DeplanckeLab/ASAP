@@ -1119,6 +1119,15 @@ public class LoomFile
 		((IHDF5Writer)this.handle).float32().writeMatrix(path, data);
     }
 	
+	public void writeFloatMatrixChunked(String path, float[][] data)
+    {
+		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
+		if(this.readOnly) new ErrorJSON("Cannot write in readOnly matrix");
+        HDF5FloatStorageFeatureBuilder features = new HDF5FloatStorageFeatureBuilder();
+        features.noScaling().chunkedStorageLayout().datasetReplacementEnforceKeepExisting().deflateLevel((byte)2);
+		((IHDF5Writer)this.handle).float32().writeMatrix(path, data, features.features());
+    }
+	
 	public void writeFloatArray(String path, float[] data)
     {
 		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
