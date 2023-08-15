@@ -86,11 +86,14 @@ public class MapGene
     	// Get infos from DB (Ensembl name, alt names, etc...)
     	ArrayList<Gene> dbHit = null;
     	Gene gHit = null;
-    	if(ens != null) dbHit = MapGene.ensembl_db.get(ens.toUpperCase()); // First test the Ensembl ID
-    	if(dbHit == null && ens != null) 
+    	if(ens != null)
     	{
-    		dbHit = MapGene.ensembl_db.get(ens.replaceFirst("\\.\\d+", "").toUpperCase()); // Test the ensembl on the geneDB
-    		if(dbHit != null) ens = ens.replaceFirst("\\.\\d+", "");
+    		dbHit = MapGene.ensembl_db.get(ens.toUpperCase()); // First test the Ensembl ID
+    		if(dbHit == null) 
+    		{
+    			dbHit = MapGene.ensembl_db.get(ens.replaceFirst("\\.\\d+", "").toUpperCase()); // Test the ensembl on the geneDB
+    			if(dbHit != null) ens = ens.replaceFirst("\\.\\d+", "");
+    		}
     	}
     	if(dbHit == null && ens != null) dbHit = MapGene.gene_db.get(ens.toUpperCase()); // Test the ensembl on the geneDB
     	if(dbHit == null && gene != null) dbHit = MapGene.ensembl_db.get(gene.toUpperCase()); // Test the gene on the EnsemblDB
@@ -102,9 +105,15 @@ public class MapGene
     	if(dbHit == null) // Not Found at all
     	{
 			gHit = new Gene();
-			if(ens == null && gene == null) gene = new StringBuffer("Gene_").append(index + 1).toString();
-			gHit.ensembl_id = (ens == null)?"":ens;
-			gHit.name  = (gene == null)?"":gene;
+			if(ens == null && gene == null)
+			{
+				gene = new StringBuffer("Gene_").append(index + 1).toString();
+				ens = gene;
+			}
+			if(ens == null) ens = "";
+			if(gene == null) gene = ens; // Ensure Gene is never Null
+			gHit.ensembl_id = ens;
+			gHit.name = gene;
 			gHit.alt_names = new HashSet<>();
 			gHit.biotype = "__unknown";
 			gHit.chr = "__unknown";
@@ -116,11 +125,12 @@ public class MapGene
     	if(dbHit != null) gHit = MapGene.retrieveLatest(gene, ens, dbHit);
 		
 		// Update the final entries for the Loom
+    	if(gHit.name == null) new ErrorJSON("Gene " + data.original_gene_names.get(index) + " is NULL from DB???");
 		data.ens_names.set(index, gHit.ensembl_id);
+		data.gene_names.set(index, gHit.name);
 		data.biotypes.set(index, gHit.biotype);
 		data.chromosomes.set(index, gHit.chr);
 		data.sumExonLength.set(index, gHit.sum_exon_length);
-		data.gene_names.set(index, gHit.name);
     }
 	
 }

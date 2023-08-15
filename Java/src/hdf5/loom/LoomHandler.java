@@ -122,7 +122,12 @@ public class LoomHandler
 	    		json.data.original_gene_names = json.data.gene_names.copy(); // I replace if there was an Ensembl before
 	    	}
 	    	else json.data.gene_names = new StringArray64(json.data.nber_genes); // After checking the database, this is filled appropriately
-	    	if(json.data.original_gene_names == null) json.data.original_gene_names = new StringArray64(json.data.nber_genes); // In case there is nothing...
+	    	if(json.data.original_gene_names == null)
+	    	{
+	    		// In case there is nothing...
+	    		json.data.original_gene_names = new StringArray64(json.data.nber_genes);
+	    		for (int i = 0; i < json.data.original_gene_names.size(); i++) json.data.original_gene_names.set(i, "Gene_" + (i + 1));
+	    	}
 	    	MapGene.parseGenes(json.data);
 	
 	    	// Original file block sizes is kept (easier to perform the copy)
