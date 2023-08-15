@@ -125,7 +125,11 @@ public class MapGene
     	if(dbHit != null) gHit = MapGene.retrieveLatest(gene, ens, dbHit);
 		
 		// Update the final entries for the Loom
-    	if(gHit.name == null) new ErrorJSON("Gene " + data.original_gene_names.get(index) + " is NULL from DB???");
+    	if(gHit.name == null)
+    	{
+    		// Weird case where the DB is not fully filled
+    		gHit.name = gHit.ensembl_id;
+    	}
 		data.ens_names.set(index, gHit.ensembl_id);
 		data.gene_names.set(index, gHit.name);
 		data.biotypes.set(index, gHit.biotype);

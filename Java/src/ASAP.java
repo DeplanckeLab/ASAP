@@ -45,13 +45,13 @@ public class ASAP
 	public static void main(String[] args)
 	{
 		DBManager.JDBC_DRIVER = Config.driver;
-		DBManager.URL = Config.ConfigMAIN().getURL("asap2_data_v5");
+		DBManager.URL = Config.ConfigMAIN().getURL("asap2_data_v6");
 		
 		if(args.length == 0) readMode(args);
 		
 		// Check if debug mode
 		String[] args2 = isDebug(args);
-		if(Parameters.debugMode) DBManager.URL = Config.ConfigDEV().getURL("asap2_data_v5");
+		if(Parameters.debugMode) DBManager.URL = Config.ConfigDEV().getURL("asap2_data_v6");
 		
 		// Check which tool is called
 		args2 = readMode(args2);
