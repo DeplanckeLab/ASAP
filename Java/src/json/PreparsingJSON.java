@@ -51,6 +51,8 @@ public class PreparsingJSON
     	// Prepare String
     	StringBuilder sb = new StringBuilder();
 	    sb.append("{\"detected_format\":\"").append(Parameters.fileType).append("\",");
+	    if(Parameters.rowNames != null) sb.append("\"row_names\":\"").append(Parameters.rowNames).append("\",");
+	    if(Parameters.colNames != null) sb.append("\"col_names\":\"").append(Parameters.colNames).append("\",");
     	sb.append("\"list_groups\":").append(toString(groups)).append(",").append(Metadata.toString(okMetadata, "metadata")).append(",").append(Metadata.toString(otherMetadata, "other_metadata")).append("}");
     	
         // Write output JSON

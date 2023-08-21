@@ -519,18 +519,63 @@ public class H5ADHandler
     	
     	// 3. Cataloging metadata
     	listMetadata(reader, okMetadata, otherMetadata, mainG.nbGenes, mainG.nbCells);
-    			
+    	
 		// 3.5. Intermediary step: Looking for cell/gene names
 		String[] colNames = null;
 		String[] rowNames = null;
-		if(Parameters.colNames != null) 
+		if(Parameters.colNames == null)
+		{
+			// Try to guess the actual colnames
+			if(mainG.name.startsWith("/raw"))
+			{
+				if(reader.object().hasAttribute("/raw/obs", "_index")) Parameters.colNames = reader.string().getAttr("/raw/obs", "_index");
+				if(Parameters.colNames == null && reader.object().hasAttribute("/raw/obs", "index")) Parameters.colNames = reader.string().getAttr("/raw/obs", "index");
+			}
+			if(Parameters.colNames != null)
+			{
+				long[] dim = reader.getDataSetInformation(Parameters.colNames).getDimensions();
+				if(dim[0] != mainG.nbCells) Parameters.colNames = null;
+			}
+			if(Parameters.colNames == null && reader.object().hasAttribute("/obs", "_index")) Parameters.colNames = reader.string().getAttr("/obs", "_index");
+			if(Parameters.colNames == null && reader.object().hasAttribute("/obs", "index")) Parameters.colNames = reader.string().getAttr("/obs", "index");
+			if(Parameters.colNames != null)
+			{
+				long[] dim = reader.getDataSetInformation(Parameters.colNames).getDimensions();
+				if(dim[0] != mainG.nbCells) Parameters.colNames = null;
+			}
+			if(Parameters.colNames != null) colNames = reader.string().readArrayBlock(Parameters.colNames, 10, 0);
+		}
+		else
 		{
 			if(!reader.exists(Parameters.colNames)) new ErrorJSON(Parameters.colNames + " does not exist. Please change the '--col-names' parameter");
 			long[] dim = reader.getDataSetInformation(Parameters.colNames).getDimensions();
 			if(dim[0] != mainG.nbCells) new ErrorJSON(Parameters.colNames + " is not of the same size as the main matrix. Please change the '--col-names' parameter");
 			colNames = reader.string().readArrayBlock(Parameters.colNames, 10, 0);
 		}
-		if(Parameters.rowNames != null) 
+		if(Parameters.rowNames == null)
+		{
+			// Try to guess the actual rownames
+			if(mainG.name.startsWith("/raw"))
+			{
+				if(reader.object().hasAttribute("/raw/var", "_index")) Parameters.rowNames = reader.string().getAttr("/raw/var", "_index");
+				if(Parameters.rowNames == null && reader.object().hasAttribute("/raw/var", "index")) Parameters.rowNames = reader.string().getAttr("/raw/var", "index");
+			}
+			if(Parameters.rowNames != null)
+			{
+				long[] dim = reader.getDataSetInformation(Parameters.rowNames).getDimensions();
+				if(dim[0] != mainG.nbGenes) Parameters.rowNames = null;
+			}
+			if(Parameters.rowNames == null && reader.object().hasAttribute("/var", "_index")) Parameters.rowNames = reader.string().getAttr("/var", "_index");
+			if(Parameters.rowNames == null && reader.object().hasAttribute("/var", "index")) Parameters.rowNames = reader.string().getAttr("/var", "index");
+			if(Parameters.rowNames != null)
+			{
+				long[] dim = reader.getDataSetInformation(Parameters.rowNames).getDimensions();
+				if(dim[0] != mainG.nbGenes) Parameters.rowNames = null;
+			}
+			if(Parameters.rowNames != null) rowNames = reader.string().readArrayBlock(Parameters.rowNames, 10, 0);
+
+		}
+		else
 		{
 			if(!reader.exists(Parameters.rowNames)) new ErrorJSON(Parameters.rowNames + " does not exist. Please change the '--row-names' parameter");
 			long[] dim = reader.getDataSetInformation(Parameters.rowNames).getDimensions();
@@ -848,7 +893,11 @@ public class H5ADHandler
 	    	}
 	    	else if(sparse_format.equals("csc")) // CSC
 	    	{
-	        	int nGenes = (int)Math.min(10, g.nbGenes);
+	    		new ErrorJSON("[FORMAT] This file contains a dataset ("+path+") in the 'CSC' sparse format, which is not handled. Please use a newer version of AnnData to submit your H5AD file.");
+	        	/**
+	        	 */
+	    		/*
+	    		int nGenes = (int)Math.min(10, g.nbGenes);
 	        	int nCells = (int)Math.min(10, g.nbCells);
 	        	g.matrix = new float[nGenes][nCells]; // Dense matrix to be computed from sparse format
 		        // Read 3 datasets required for recreating the dense matrix     
@@ -866,6 +915,7 @@ public class H5ADHandler
 						}
 					}
 				}
+		        */
 	    	}
 		}
 		else // DENSE
