@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 
 import bigarrays.StringArray64;
+import ch.systemsx.cisd.hdf5.HDF5DataClass;
 import tools.Utils;
 
 public class Metadata 
@@ -12,6 +13,7 @@ public class Metadata
 	public String path;
 	public Metatype type;
 	public MetaOn on;
+	public HDF5DataClass h5_class;
 	public long missingValues = 0;
 	public HashSet<String> categories;
 	public HashMap<String, Long> categoriesMap;

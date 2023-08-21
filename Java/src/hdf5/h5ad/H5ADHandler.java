@@ -413,7 +413,7 @@ public class H5ADHandler
 	    	else if(sparse_format.equals("csc")) // CSC
 	    	{
 	    		// TODO Handle this...
-	    		if(isMain) new ErrorJSON("[FORMAT] This file contains a dataset ("+path+") in the 'CSC' sparse format, which is not handled. Please use a newer version of AnnData to submit your H5AD file.");
+	    		if(isMain) new ErrorJSON("[FORMAT_H5AD] This file contains a dataset ("+path+") in the 'CSC' sparse format, which is not handled. Please use a newer version of AnnData to submit your H5AD file.");
 	    		System.out.println(path+": Dataset in the 'CSC' sparse format, which is not handled [Discarded]");
 	    		return false;
 	    	}
@@ -633,7 +633,7 @@ public class H5ADHandler
 		List<String> m = reader.getGroupMembers(path);
 		if(m.contains("__categories"))
 		{
-    		new ErrorJSON("[FORMAT] This file contains a group '__categories' which is an old format, which is not handled. Please use a newer version of AnnData to submit your H5AD file.");
+    		new ErrorJSON("[FORMAT_H5AD] This file contains a group '__categories' which is an old format, which is not handled. Please use a newer version of AnnData to submit your H5AD file.");
 		}
 		for(String mem:m)
 		{
@@ -668,7 +668,18 @@ public class H5ADHandler
 						// Retrieve extra information
 						dim = reader.getDataSetInformation(path + mem + "/categories").getDimensions();
 						tmp_m.nbCat = (int)dim[0];
-						if(sizeOK(tmp_m, nbGenes, nbCells)) okMetadata.add(tmp_m);
+						tmp_m.h5_class = reader.getDataSetInformation(path + mem + "/codes").getTypeInformation().getDataClass();
+						tmp_m.type = Metatype.UNKNOWN;
+						if(sizeOK(tmp_m, nbGenes, nbCells)) 
+						{
+							if(tmp_m.h5_class == HDF5DataClass.STRING && (tmp_m.on == MetaOn.CELL || tmp_m.on == MetaOn.GENE))
+							{
+								// Check if row.names / col.names material
+								if((tmp_m.on == MetaOn.GENE && tmp_m.nbCat == tmp_m.nbrow) || (tmp_m.on == MetaOn.CELL && tmp_m.nbCat == tmp_m.nbcol)) tmp_m.type = Metatype.STRING;
+								else tmp_m.type = Metatype.DISCRETE;
+							}	
+							okMetadata.add(tmp_m);
+						}
 						else 
 						{
 							System.out.println(tmp_m.path + ": Not same size [Discarded]");
@@ -696,6 +707,8 @@ public class H5ADHandler
 				tmp_m.on = on;
 				
 				long[] dim = reader.getDataSetInformation(path + mem).getDimensions();
+				tmp_m.h5_class =  reader.getDataSetInformation(path + mem).getTypeInformation().getDataClass();
+				tmp_m.type = Metatype.UNKNOWN;
 				
 				// Set correct nbcol/nbrow
 				if(tmp_m.on == MetaOn.GENE) 
@@ -712,7 +725,29 @@ public class H5ADHandler
 				}
 				
 				// Check size
-				if(sizeOK(tmp_m, nbGenes, nbCells)) okMetadata.add(tmp_m);
+				if(sizeOK(tmp_m, nbGenes, nbCells))
+				{
+					if(tmp_m.h5_class == HDF5DataClass.STRING && (tmp_m.on == MetaOn.CELL || tmp_m.on == MetaOn.GENE))
+					{
+						// Check if row.names / col.names material
+						tmp_m.categories = new HashSet<>();
+						tmp_m.values = new StringArray64(dim[0]);
+						int nbChunks = (int)(dim[0] / StringArray64.chunkSize()) + 1;
+						for(int i = 0; i < nbChunks; i++) tmp_m.values.set(i, reader.string().readArrayBlock(path + mem, StringArray64.chunkSize(), i));
+						boolean added = false;
+						for(long i = 0; i < tmp_m.values.size(); i++)
+						{
+							String v = tmp_m.values.get(i);						
+							added = tmp_m.categories.add(v);
+							if(!added) break; // To alleviate the calculations/ Map size
+						}
+						
+						if(added) tmp_m.type = Metatype.STRING;
+						else tmp_m.type = Metatype.DISCRETE;
+						tmp_m.categories = null;
+					}
+					okMetadata.add(tmp_m);
+				}
 				else 
 				{
 					System.out.println(tmp_m.path + ": Not same size [Discarded]");
@@ -731,11 +766,11 @@ public class H5ADHandler
 	    	HDF5DataClass c = inf.getTypeInformation().getDataClass();
 	    	if(c == HDF5DataClass.COMPOUND)
 	    	{
-	    		new ErrorJSON("[FORMAT] This file contains a dataset ("+path+") in the 'COMPOUND' format, which is not handled. Please use a newer version of AnnData to submit your H5AD file.");
+	    		new ErrorJSON("[FORMAT_H5AD] This file contains a dataset ("+path+") in the 'COMPOUND' format, which is not handled. Please use a newer version of AnnData to submit your H5AD file.");
 	    	}
 	    	else
 	    	{
-	    		new ErrorJSON("[FORMAT] This file contains datasets in a format which is not handled:" + path);
+	    		new ErrorJSON("[FORMAT_H5AD] This file contains datasets in a format which is not handled:" + path);
 	    	}
     	}
 	}
@@ -909,7 +944,7 @@ public class H5ADHandler
 	    	}
 	    	else if(sparse_format.equals("csc")) // CSC
 	    	{
-	    		new ErrorJSON("[FORMAT] This file contains a dataset ("+path+") in the 'CSC' sparse format, which is not handled. Please use a newer version of AnnData to submit your H5AD file.");
+	    		new ErrorJSON("[FORMAT_H5AD] This file contains a dataset ("+path+") in the 'CSC' sparse format, which is not handled. Please use a newer version of AnnData to submit your H5AD file.");
 	        	/**
 	        	 */
 	    		/*
