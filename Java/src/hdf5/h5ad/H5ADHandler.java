@@ -528,20 +528,28 @@ public class H5ADHandler
 			// Try to guess the actual colnames
 			if(mainG.name.startsWith("/raw"))
 			{
-				if(reader.object().hasAttribute("/raw/obs", "_index")) Parameters.colNames = reader.string().getAttr("/raw/obs", "_index");
-				if(Parameters.colNames == null && reader.object().hasAttribute("/raw/obs", "index")) Parameters.colNames = reader.string().getAttr("/raw/obs", "index");
+				if(reader.object().hasAttribute("/raw/obs", "_index")) Parameters.colNames = "/raw/obs/" + reader.string().getAttr("/raw/obs", "_index");
+				if(Parameters.colNames == null && reader.object().hasAttribute("/raw/obs", "index")) Parameters.colNames = "/raw/obs/" +reader.string().getAttr("/raw/obs", "index");
 			}
 			if(Parameters.colNames != null)
 			{
-				long[] dim = reader.getDataSetInformation(Parameters.colNames).getDimensions();
-				if(dim[0] != mainG.nbCells) Parameters.colNames = null;
+				if(reader.exists(Parameters.colNames))
+				{
+					long[] dim = reader.getDataSetInformation(Parameters.colNames).getDimensions();
+					if(dim[0] != mainG.nbCells) Parameters.colNames = null;
+				}
+				else Parameters.colNames = null;
 			}
-			if(Parameters.colNames == null && reader.object().hasAttribute("/obs", "_index")) Parameters.colNames = reader.string().getAttr("/obs", "_index");
-			if(Parameters.colNames == null && reader.object().hasAttribute("/obs", "index")) Parameters.colNames = reader.string().getAttr("/obs", "index");
+			if(Parameters.colNames == null && reader.object().hasAttribute("/obs", "_index")) Parameters.colNames = "/obs/" + reader.string().getAttr("/obs", "_index");
+			if(Parameters.colNames == null && reader.object().hasAttribute("/obs", "index")) Parameters.colNames = "/obs/" + reader.string().getAttr("/obs", "index");
 			if(Parameters.colNames != null)
 			{
-				long[] dim = reader.getDataSetInformation(Parameters.colNames).getDimensions();
-				if(dim[0] != mainG.nbCells) Parameters.colNames = null;
+				if(reader.exists(Parameters.colNames))
+				{
+					long[] dim = reader.getDataSetInformation(Parameters.colNames).getDimensions();
+					if(dim[0] != mainG.nbCells) Parameters.colNames = null;
+				}
+				else Parameters.colNames = null;
 			}
 			if(Parameters.colNames != null) colNames = reader.string().readArrayBlock(Parameters.colNames, 10, 0);
 		}
@@ -557,20 +565,28 @@ public class H5ADHandler
 			// Try to guess the actual rownames
 			if(mainG.name.startsWith("/raw"))
 			{
-				if(reader.object().hasAttribute("/raw/var", "_index")) Parameters.rowNames = reader.string().getAttr("/raw/var", "_index");
-				if(Parameters.rowNames == null && reader.object().hasAttribute("/raw/var", "index")) Parameters.rowNames = reader.string().getAttr("/raw/var", "index");
+				if(reader.object().hasAttribute("/raw/var", "_index")) Parameters.rowNames = "/raw/var/" + reader.string().getAttr("/raw/var", "_index");
+				if(Parameters.rowNames == null && reader.object().hasAttribute("/raw/var", "index")) Parameters.rowNames = "/raw/var/" + reader.string().getAttr("/raw/var", "index");
 			}
 			if(Parameters.rowNames != null)
 			{
-				long[] dim = reader.getDataSetInformation(Parameters.rowNames).getDimensions();
-				if(dim[0] != mainG.nbGenes) Parameters.rowNames = null;
+				if(reader.exists(Parameters.rowNames))
+				{
+					long[] dim = reader.getDataSetInformation(Parameters.rowNames).getDimensions();
+					if(dim[0] != mainG.nbGenes) Parameters.rowNames = null;
+				}
+				else Parameters.rowNames = null;
 			}
-			if(Parameters.rowNames == null && reader.object().hasAttribute("/var", "_index")) Parameters.rowNames = reader.string().getAttr("/var", "_index");
-			if(Parameters.rowNames == null && reader.object().hasAttribute("/var", "index")) Parameters.rowNames = reader.string().getAttr("/var", "index");
+			if(Parameters.rowNames == null && reader.object().hasAttribute("/var", "_index")) Parameters.rowNames = "/var/" + reader.string().getAttr("/var", "_index");
+			if(Parameters.rowNames == null && reader.object().hasAttribute("/var", "index")) Parameters.rowNames = "/var/" + reader.string().getAttr("/var", "index");
 			if(Parameters.rowNames != null)
 			{
-				long[] dim = reader.getDataSetInformation(Parameters.rowNames).getDimensions();
-				if(dim[0] != mainG.nbGenes) Parameters.rowNames = null;
+				if(reader.exists(Parameters.rowNames))
+				{
+					long[] dim = reader.getDataSetInformation(Parameters.rowNames).getDimensions();
+					if(dim[0] != mainG.nbGenes) Parameters.rowNames = null;
+				}
+				else Parameters.rowNames = null;
 			}
 			if(Parameters.rowNames != null) rowNames = reader.string().readArrayBlock(Parameters.rowNames, 10, 0);
 
