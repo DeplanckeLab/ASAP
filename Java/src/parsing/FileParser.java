@@ -870,8 +870,13 @@ public class FileParser
 			String biotype = json.data.biotypes.get(current_line - 1);
 			String chr = json.data.chromosomes.get(current_line - 1);
 			if(biotype.equals("protein_coding")) isProteinCoding = true;
-			else if(biotype.equals("rRNA")) isRibo = true;
+			if(biotype.equals("rRNA")) isRibo = true;
+			if(biotype.equals("ribosomal_genome")) isRibo = true;
 			if(chr.equals("MT")) isMito = true;
+			if(chr.equals("mt")) isMito = true;
+			if(chr.equals("M")) isMito = true;
+			if(chr.equals("mitochondrion_genome")) isMito = true;
+			if(chr.equals("dmel_mitochondrion_genome")) isMito = true;
 			
 			// Reading the rest of the values
 			for(long j = start; j < end; j++)
