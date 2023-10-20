@@ -12,7 +12,14 @@ args <- commandArgs(trailingOnly = TRUE)
 # Libraries
 suppressPackageStartupMessages(library(Seurat))
 suppressPackageStartupMessages(library(jsonlite))
+suppressPackageStartupMessages(library(ggplot2)) # for theme
+suppressPackageStartupMessages(library(plotly)) # for ggplotly
 suppressPackageStartupMessages(source("hdf5_lib.R"))
+
+# Functions
+serialize <- function(widget) {
+  htmlwidgets:::toJSON2(widget, pretty=TRUE, digits = 3)
+}
 
 # Arguments
 input_loom <- args[1]

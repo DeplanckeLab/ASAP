@@ -5,18 +5,18 @@
 ## Author: Vincent Gardeux (vincent.gardeux@epfl.ch)
 ##################################################
 
-### Parameters handling
+# Parameters handling
 options(echo=TRUE)
 args <- commandArgs(trailingOnly = TRUE)
 
-## Libraries
+# Libraries
 suppressPackageStartupMessages(library(Seurat))
 suppressPackageStartupMessages(library(Matrix))
 suppressPackageStartupMessages(library(jsonlite))
 suppressPackageStartupMessages(library(plotly))
 suppressPackageStartupMessages(source("hdf5_lib.R"))
 
-## Functions
+# Functions
 serialize <- function(widget) {
   htmlwidgets:::toJSON2(widget, pretty=TRUE, digits = 3)
 }
