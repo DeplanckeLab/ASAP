@@ -19,9 +19,10 @@ set.seed(42)
 input_loom <- args[1]
 input_dataset_path <- args[2]
 output_dataset_path <- args[3]
-output_json_path <- args[4]
+output_dir <- args[4]
 data.warnings <- NULL
 time_idle <- 0
+if(!endsWith(output_dir, "/")) output_dir <- output_dir + "/"
 
 #input_loom <- "grrpvn_parsing_output.loom"
 #input_dataset_path <- "/matrix"
@@ -64,5 +65,5 @@ stats$metadata = list(list(name = output_dataset_path, on = "EXPRESSION_MATRIX",
 if(is.null(output_json_path)){
   cat(toJSON(stats, method="C", auto_unbox=T, digits = NA))
 } else {
-  cat(toJSON(stats, method="C", auto_unbox=T, digits = NA), file = output_json_path)
+  cat(toJSON(stats, method="C", auto_unbox=T, digits = NA), file = paste0(output_dir, "output.json"))
 }

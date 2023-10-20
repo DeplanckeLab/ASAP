@@ -27,9 +27,8 @@ raw_dataset_path <- args[2]
 norm_dataset_path <- args[3]
 output_dataset_path <- args[4]
 output_dir <- args[5]
-output_json_path <- args[6]
-method <- args[7] # vst, dispersion, mean.var.plot
-n_features <- as.numeric(args[8]) # Number of features to select as top variable features; only used when selection.method is set to 'dispersion' or 'vst'
+method <- args[6] # vst, dispersion, mean.var.plot
+n_features <- as.numeric(args[7]) # Number of features to select as top variable features; only used when selection.method is set to 'dispersion' or 'vst'
 
 #input_loom <- "grrpvn_parsing_output.loom"
 #raw_dataset_path <- "/matrix"
@@ -99,5 +98,5 @@ stats$metadata = list(list(name = output_dataset_path, on = "GENE", type = "DISC
 if(is.null(output_json_path)){
   cat(toJSON(stats, method="C", auto_unbox=T, digits = NA))
 } else {
-  cat(toJSON(stats, method="C", auto_unbox=T, digits = NA), file = output_json_path)
+  cat(toJSON(stats, method="C", auto_unbox=T, digits = NA), file = paste0(output_dir, "output.json"))
 }
