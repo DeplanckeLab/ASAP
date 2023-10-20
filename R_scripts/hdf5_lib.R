@@ -5,10 +5,11 @@ error.json <- function(displayed) {
   on.exit(options(opt))
   stats <- list()
   stats$displayed_error = displayed
-  if(!exists('output_dir') || is.null(output_dir)){
-    cat(toJSON(stats, method="C", auto_unbox=T))
+  if(exists('output_dir') & !is.null(output_dir) & !is.na(output_dir)){
+    if(!endsWith(output_dir, "/")) output_dir <- output_dir + "/"
+    write(toJSON(stats, method="C", auto_unbox=T), file = paste0(output_dir,"output.json"), append=F)
   } else {
-    write(toJSON(stats, method="C", auto_unbox=T), file = paste0(output_dir,"/output.json"), append=F)  
+    cat(toJSON(stats, method="C", auto_unbox=T))
   }
   close_all()
   stop(call. = F)

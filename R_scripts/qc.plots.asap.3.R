@@ -5,26 +5,31 @@
 ## Author: Vincent Gardeux (vincent.gardeux@epfl.ch)
 ##################################################
 
-### Parameters handling
+# Parameters handling
 options(echo=TRUE)
 args <- commandArgs(trailingOnly = TRUE)
 
-## Libraries
+# Libraries
 suppressPackageStartupMessages(library(Seurat))
 suppressPackageStartupMessages(library(jsonlite))
 suppressPackageStartupMessages(source("hdf5_lib.R"))
 
-### Default Parameters
-set.seed(42)
+# Arguments
 input_loom <- args[1]
 input_dataset_path <- args[2]
 output_dir <- args[3]
-data.warnings <- NULL
-time_idle <- 0
 
 #input_loom <- "grrpvn_parsing_output.loom"
 #input_dataset_path <- "/matrix"
 #output_dir <- "./"
+
+# Parameters
+set.seed(42)
+data.warnings <- NULL
+time_idle <- 0
+if(exists('output_dir') & !is.null(output_dir) & !is.na(output_dir)){
+  if(!endsWith(output_dir, "/")) output_dir <- output_dir + "/"
+}
 
 # Error case: Loom file does not exist
 if(!file.exists(input_loom)) error.json(paste0("This file: '", input_loom, "', does not exist!"))
@@ -69,5 +74,9 @@ stats$nber_rows = nrow(data.seurat)
 stats$nber_cols = ncol(data.seurat)
 if(!is.null(data.warnings)) stats$warnings = data.warnings
 stats$plots <- list(paste0(output_dir,"qc.1.seurat.png"), paste0(output_dir,"qc.1.seurat.pdf"), paste0(output_dir,"qc.1.seurat.json"), paste0(output_dir,"qc.2.seurat.png"), paste0(output_dir,"qc.2.seurat.pdf"), paste0(output_dir,"qc.2.seurat.json"))
-cat(toJSON(stats, method="C", auto_unbox=T, digits = NA))
+if(exists('output_dir') & !is.null(output_dir) & !is.na(output_dir)){
+  cat(toJSON(stats, method="C", auto_unbox=T, digits = NA), file = paste0(output_dir, "output.json"))
+} else {
+  cat(toJSON(stats, method="C", auto_unbox=T, digits = NA))
+}
 

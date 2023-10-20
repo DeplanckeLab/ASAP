@@ -26,7 +26,8 @@ input_loom <- args[1]
 raw_dataset_path <- args[2]
 pca_dataset_path <- args[3]
 output_dataset_path <- args[4]
-n_pcs <- as.numeric(args[5]) # Number of PCs of PCA to use for computing t-SNE
+output_dir <- args[5]
+n_pcs <- as.numeric(args[6]) # Number of PCs of PCA to use for computing t-SNE
 
 #input_loom <- "grrpvn_parsing_output.loom"
 #raw_dataset_path <- "/matrix"
@@ -38,6 +39,9 @@ n_pcs <- as.numeric(args[5]) # Number of PCs of PCA to use for computing t-SNE
 set.seed(42)
 data.warnings <- NULL
 time_idle <- 0
+if(exists('output_dir') & !is.null(output_dir) & !is.na(output_dir)){
+  if(!endsWith(output_dir, "/")) output_dir <- output_dir + "/"
+}
 
 # Error case: Loom file does not exist
 if(!file.exists(input_loom)) error.json(paste0("This file: '", input_loom, "', does not exist!"))
@@ -79,4 +83,8 @@ stats <- list()
 stats$time_idle = time_idle
 if(!is.null(data.warnings)) stats$warnings = data.warnings
 stats$metadata = list(list(name = output_dataset_path, on = "CELL", type = "NUMERIC", nber_rows = 2, nber_cols = ncol(data.seurat), dataset_size = datasetSize))
-cat(toJSON(stats, method="C", auto_unbox=T, digits = NA))
+if(exists('output_dir') & !is.null(output_dir) & !is.na(output_dir)){
+  cat(toJSON(stats, method="C", auto_unbox=T, digits = NA), file = paste0(output_dir, "output.json"))
+} else {
+  cat(toJSON(stats, method="C", auto_unbox=T, digits = NA))
+}

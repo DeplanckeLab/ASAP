@@ -42,7 +42,9 @@ n_features <- as.numeric(args[7]) # Number of features to select as top variable
 set.seed(42)
 data.warnings <- NULL
 time_idle <- 0
-if(!endsWith(output_dir, "/")) output_dir <- output_dir + "/"
+if(exists('output_dir') & !is.null(output_dir) & !is.na(output_dir)){
+  if(!endsWith(output_dir, "/")) output_dir <- output_dir + "/"
+}
 
 # Error case: Loom file does not exist
 if(!file.exists(input_loom)) error.json(paste0("This file: '", input_loom, "', does not exist!"))
@@ -95,8 +97,8 @@ stats$time_idle = time_idle
 if(!is.null(data.warnings)) stats$warnings = data.warnings
 stats$plots <- list(paste0(output_dir,"hvg.seurat.png"), paste0(output_dir,"hvg.seurat.pdf"), paste0(output_dir,"hvg.seurat.json"))
 stats$metadata = list(list(name = output_dataset_path, on = "GENE", type = "DISCRETE", nber_rows = nrow(data.seurat), nber_cols = 1, dataset_size = datasetSize))
-if(is.null(output_json_path)){
-  cat(toJSON(stats, method="C", auto_unbox=T, digits = NA))
-} else {
+if(exists('output_dir') & !is.null(output_dir) & !is.na(output_dir)){
   cat(toJSON(stats, method="C", auto_unbox=T, digits = NA), file = paste0(output_dir, "output.json"))
+} else {
+  cat(toJSON(stats, method="C", auto_unbox=T, digits = NA))
 }
