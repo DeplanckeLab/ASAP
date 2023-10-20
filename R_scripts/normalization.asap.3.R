@@ -19,6 +19,7 @@ set.seed(42)
 input_loom <- args[1]
 input_dataset_path <- args[2]
 output_dataset_path <- args[3]
+output_json_path <- args[4]
 data.warnings <- NULL
 time_idle <- 0
 
@@ -60,5 +61,8 @@ stats$nber_rows = nrow(data.seurat)
 stats$nber_cols = ncol(data.seurat)
 if(!is.null(data.warnings)) stats$warnings = data.warnings
 stats$metadata = list(list(name = output_dataset_path, on = "EXPRESSION_MATRIX", type = "NUMERIC", nber_rows = nrow(data.seurat), nber_cols = ncol(data.seurat), dataset_size = datasetSize))
-cat(toJSON(stats, method="C", auto_unbox=T, digits = NA))
-
+if(is.null(output_json_path)){
+  cat(toJSON(stats, method="C", auto_unbox=T, digits = NA))
+} else {
+  cat(toJSON(stats, method="C", auto_unbox=T, digits = NA), file = output_json_path)
+}
