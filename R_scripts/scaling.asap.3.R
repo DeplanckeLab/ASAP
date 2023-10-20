@@ -1,7 +1,7 @@
 ##################################################
 ## Project: ASAP
 ## Script purpose: Scaling and covariate removal v3
-## Date: 2023 November 16
+## Date: 2023 October 16
 ## Author: Vincent Gardeux (vincent.gardeux@epfl.ch)
 ##################################################
 

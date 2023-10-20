@@ -1,7 +1,7 @@
 ##################################################
 ## Project: ASAP
 ## Script purpose: Normalization v3
-## Date: 2023 November 12
+## Date: 2023 October 12
 ## Author: Vincent Gardeux (vincent.gardeux@epfl.ch)
 ##################################################
 

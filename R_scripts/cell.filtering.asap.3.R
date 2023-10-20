@@ -1,7 +1,8 @@
 ##################################################
 ## Project: ASAP
 ## Script purpose: Cell Filtering v3
-## Date: 2023 November 12
+## Date: 2023 October 12
+## Updated: 2023 October 20
 ## Author: Vincent Gardeux (vincent.gardeux@epfl.ch)
 ##################################################
 
@@ -53,6 +54,7 @@ if(!file.exists(input_loom)) error.json(paste0("This file: '", input_loom, "', d
 ## Open the existing Loom in read-only mode and recuperate the infos (not optimized for OUT-OF-RAM computation)
 list_row_attrs <- list()
 list_col_attrs <- list()
+list_layers <- list()
 data.loom <- open_with_lock(input_loom, "r")
 data.matrix <- fetch_dataset(data.loom, input_dataset_path, transpose = T) # If run on dimension reduction (like PCA), then do not transpose the matrix
 for(rowattr in names(data.loom$row_attrs)){
@@ -61,7 +63,10 @@ for(rowattr in names(data.loom$row_attrs)){
 for(colattr in names(data.loom$col_attrs)){
   list_col_attrs[[colattr]] <- data.loom$col_attrs[[colattr]]
 }
-# Should not have any layers or graph with the new architecture => SKIPPED
+for(layer in names(data.loom$layers)){
+  list_layers[[layer]] <- data.loom$layers[[layer]]
+}
+# For now, we don't care about the graphs, or attrs
 close_all()
 
 # Error case: Path in Loom file does not exist
@@ -91,14 +96,36 @@ data.seurat <- data.seurat[to_filter_genes, ]
 
 ## Filter row metadata
 for(rowattr in names(list_row_attrs)){
-  list_row_attrs[[rowattr]] <- list_row_attrs[[rowattr]][to_filter_genes]
+  if(length(dim(list_row_attrs[[rowattr]])) == 1){
+    list_row_attrs[[rowattr]] <- list_row_attrs[[rowattr]][to_filter_genes]
+  } else if(length(dim(list_row_attrs[[rowattr]])) == 2){
+    # DE results for example?
+    list_row_attrs[[rowattr]] <- list_row_attrs[[rowattr]][, to_filter_genes]
+  } else {
+    # What is that?
+  }
 }
 
 ## Filter col metadata
 to_filter_cells <- before_filtering %in% after_filtering 
 for(colattr in names(list_col_attrs)){
-  if(colattr == "Embedding_HVG_PC1_PC2") break;
-  list_col_attrs[[colattr]] <- list_col_attrs[[colattr]][to_filter_cells]
+  if(length(dim(list_col_attrs[[colattr]])) == 1){
+    list_col_attrs[[colattr]] <- list_col_attrs[[colattr]][to_filter_cells]
+  } else if(length(dim(list_col_attrs[[colattr]])) == 2){
+    # Embeddings for example?
+    list_col_attrs[[colattr]] <- list_col_attrs[[colattr]][, to_filter_cells]
+  } else {
+    # What is that?
+  }
+}
+
+## Filter layers
+for(layer in names(list_layers)){
+  if(length(dim(list_layers[[layer]])) == 2){
+    list_layers[[layer]] <- list_layers[[layer]][to_filter_cells, to_filter_genes]
+  } else {
+    # What is that?
+  }
 }
 
 # Prepare the JSON
@@ -108,6 +135,7 @@ index <- 1
 
 # Writing the dataset in the loom file
 data.loom <- create_with_lock(output_loom)
+
 # Add main matrix
 add_matrix_dataset(handle = data.loom, dataset_path = input_dataset_path, dataset_object = t(as.matrix(data.seurat@assays$RNA@counts)))
 stats$metadata[[index]] <- list(name = input_dataset_path, on = "EXPRESSION_MATRIX", type = "NUMERIC", nber_rows = nrow(data.seurat), nber_cols = ncol(data.seurat), dataset_size = get_dataset_size(data.loom, input_dataset_path))
@@ -126,30 +154,81 @@ add_single_value(handle = data.loom, value_path = "/attrs/LOOM_SPEC_VERSION", va
 
 # Add row metadata
 for(rowattr in names(list_row_attrs)){
+  # Check type
   storage.mode <- typeof(list_row_attrs[[rowattr]])
   type.mode <- "STRING"
   if(storage.mode %in% c("integer", "double", "float", "long")) type.mode <- "NUMERIC"
   if(rowattr %in% c("_Biotypes",  "_Chromosomes", "variable_features")) type.mode <- "CATEGORICAL"
   # TODO: Handle properly the CATEGORICAL vs TEXT values
-  add_array_dataset(handle = data.loom, dataset_path = paste0("/row_attrs/", rowattr), storage.mode_param = storage.mode, dataset_object = list_row_attrs[[rowattr]])
-  stats$metadata[[index]] = list(name = paste0("/row_attrs/", rowattr), on = "GENE", type = type.mode, nber_rows = nrow(data.seurat), nber_cols = 1, dataset_size = get_dataset_size(data.loom, paste0("/row_attrs/", rowattr)))
+  
+  # Check dimension
+  ncol <- 1
+  if(length(dim(list_row_attrs[[rowattr]])) == 2) ncol <- dim(list_row_attrs[[rowattr]])[1]
+  
+  # Add to Loom
+  if(ncol == 1) {
+    add_array_dataset(handle = data.loom, dataset_path = paste0("/row_attrs/", rowattr), storage.mode_param = storage.mode, dataset_object = list_row_attrs[[rowattr]])
+  } else {
+    add_matrix_dataset(handle = data.loom, dataset_path = paste0("/row_attrs/", rowattr), storage.mode_param = storage.mode, dataset_object = list_row_attrs[[rowattr]])
+  }
+
+  # Prepare JSON
+  stats$metadata[[index]] = list(name = paste0("/row_attrs/", rowattr), on = "GENE", type = type.mode, nber_rows = nrow(data.seurat), nber_cols = ncol, dataset_size = get_dataset_size(data.loom, paste0("/row_attrs/", rowattr)))
   index <- index + 1
 }
 
 # Add col metadata
 for(colattr in names(list_col_attrs)) {
-  # TODO: Here we should probably recompute some data. Such as _Depth. Instead of just filtering it.
-  storage.mode <- typeof(data.seurat@meta.data[[colattr]])
-  if(is.null(storage.mode) || storage.mode == "NULL"){
-    # TODO Cell embeddings
+  # Check type
+  storage.mode <- typeof(list_col_attrs[[colattr]])
+  type.mode <- "STRING"
+  if(storage.mode %in% c("integer", "double", "float", "long")) type.mode <- "NUMERIC"
+  # TODO: Handle properly the CATEGORICAL vs TEXT values
+  
+  # Check dimension
+  nrow <- 1
+  if(length(dim(list_col_attrs[[colattr]])) == 2) nrow <- dim(list_col_attrs[[colattr]])[1]
+  
+  # Add to Loom
+  if(nrow == 1) {
+    add_array_dataset(handle = data.loom, dataset_path = paste0("/col_attrs/", colattr), storage.mode_param = storage.mode, dataset_object = list_col_attrs[[colattr]])
   } else {
-    type.mode <- "STRING"
-    if(storage.mode %in% c("integer", "double", "float", "long")) type.mode <- "NUMERIC"
-    add_array_dataset(handle = data.loom, dataset_path = paste0("/col_attrs/", colattr), storage.mode_param = storage.mode, dataset_object = data.seurat@meta.data[[colattr]])
-    stats$metadata[[index]] = list(name = paste0("/col_attrs/", colattr), on = "CELL", type = type.mode, nber_rows = 1, nber_cols = ncol(data.seurat), dataset_size = get_dataset_size(data.loom, paste0("/col_attrs/", colattr)))
+    add_matrix_dataset(handle = data.loom, dataset_path = paste0("/col_attrs/", colattr), storage.mode_param = storage.mode, dataset_object = list_col_attrs[[colattr]])
+  }
+  
+  # Prepare JSON
+  stats$metadata[[index]] = list(name = paste0("/col_attrs/", colattr), on = "CELL", type = type.mode, nber_rows = nrow, nber_cols = ncol(data.seurat), dataset_size = get_dataset_size(data.loom, paste0("/col_attrs/", colattr)))
+  index <- index + 1
+}
+
+# Add layers
+for(layer in names(list_layers)) {
+  # Check type
+  storage.mode <- typeof(list_layers[[layer]])
+  type.mode <- "STRING"
+  if(storage.mode %in% c("integer", "double", "float", "long")) type.mode <- "NUMERIC"
+  # TODO: Handle properly the CATEGORICAL vs TEXT values
+  
+  # Check dimension
+  if(length(dim(list_layers[[layer]])) == 2){
+    nrow <- dim(list_layers[[layer]])[2]
+    ncol <- dim(list_layers[[layer]])[1]
+    
+    # Add to Loom
+    add_matrix_dataset(handle = data.loom, dataset_path = paste0("/layers/", layer), storage.mode_param = storage.mode, dataset_object = list_layers[[layer]])
+
+    # Prepare JSON
+    stats$metadata[[index]] = list(name = paste0("/layers/", colattr), on = "EXPRESSION_MATRIX", type = type.mode, nber_rows = nrow, nber_cols = ncol, dataset_size = get_dataset_size(data.loom, paste0("/layers/", layer)))
     index <- index + 1
+  } else {
+    # What is that?
   }
 }
+
+# Recompute standard stuff
+add_array_dataset(handle = data.loom, dataset_path = "/row_attrs/_Sum", storage.mode_param = "double", dataset_object = rowSums(data.seurat))
+add_array_dataset(handle = data.loom, dataset_path = "/col_attrs/_Depth", storage.mode_param = "double", dataset_object = colSums(data.seurat))
+add_array_dataset(handle = data.loom, dataset_path = "/row_attrs/_Detected_Genes", storage.mode_param = "double", dataset_object = colSums(data.seurat@assays$RNA@counts > 0))
 
 close_all()
 

@@ -1,7 +1,7 @@
 ##################################################
 ## Project: ASAP
 ## Script purpose: HVG calculation v3
-## Date: 2023 November 13
+## Date: 2023 October 13
 ## Author: Vincent Gardeux (vincent.gardeux@epfl.ch)
 ##################################################
 
