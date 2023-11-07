@@ -42,7 +42,7 @@ set.seed(42)
 data.warnings <- NULL
 time_idle <- 0
 if(exists('output_dir') & !is.null(output_dir) & !is.na(output_dir)){
-  if(!endsWith(output_dir, "/")) output_dir <- output_dir + "/"
+  if(!endsWith(output_dir, "/")) output_dir <- paste0(output_dir, "/")
 }
 
 # Error case: Loom file does not exist
@@ -86,6 +86,7 @@ stats <- list()
 stats$time_idle = time_idle
 if(!is.null(data.warnings)) stats$warnings = data.warnings
 stats$metadata = list(list(name = output_dataset_path, on = "CELL", type = "NUMERIC", nber_rows = 1, nber_cols = ncol(data.seurat), dataset_size = datasetSize))
+stats$nber_clusters = length(unique(data.seurat@meta.data$seurat_clusters))
 if(exists('output_dir') & !is.null(output_dir) & !is.na(output_dir)){
   cat(toJSON(stats, method="C", auto_unbox=T, digits = NA), file = paste0(output_dir, "output.json"))
 } else {

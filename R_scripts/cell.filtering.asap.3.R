@@ -36,7 +36,7 @@ set.seed(42)
 data.warnings <- NULL
 time_idle <- 0
 if(exists('output_dir') & !is.null(output_dir) & !is.na(output_dir)){
-  if(!endsWith(output_dir, "/")) output_dir <- output_dir + "/"
+  if(!endsWith(output_dir, "/")) output_dir <- paste0(output_dir, "/")
 }
 
 #input_loom <- "/data/gardeux/f9w7cz_parsing_output.loom" #grrpvn_parsing_output.loom

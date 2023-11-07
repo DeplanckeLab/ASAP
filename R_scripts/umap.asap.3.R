@@ -40,7 +40,7 @@ set.seed(42)
 data.warnings <- NULL
 time_idle <- 0
 if(exists('output_dir') & !is.null(output_dir) & !is.na(output_dir)){
-  if(!endsWith(output_dir, "/")) output_dir <- output_dir + "/"
+  if(!endsWith(output_dir, "/")) output_dir <- paste0(output_dir, "/")
 }
 
 # Error case: Loom file does not exist
