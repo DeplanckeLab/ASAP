@@ -362,7 +362,7 @@ public class Utils
 		for(double a : data) sum += a;
 		return sum/data.length;
 	}
-	
+		
 	public static float mean(float[] data)
 	{
 		float sum = 0;

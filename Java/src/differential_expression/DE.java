@@ -273,6 +273,7 @@ public class DE
     	// Recuperate infos from loom, and depth for on-the-go normalization
     	if(!loom.exists("/col_attrs/_Depth")) new ErrorJSON("Error in the Loom file. Path '/col_attrs/_Depth' should exist!");
     	DoubleArray64 depth = loom.readDoubleArray("/col_attrs/_Depth");
+    	    	
     	long[] dim = loom.getDimensions();
 		int[] blockSize = loom.getChunkSizes();
     	
@@ -325,13 +326,13 @@ public class DE
 		for(int nbBlocks = 0; nbBlocks < nbTotalBlocks; nbBlocks++)
 		{		
 			// Retrieve the blocks that will contain all columns (because we write gene by gene)
-			float[][] subMatrix = loom.readFloatBlock("/matrix", blockSize[0], (int)dim[1], nbBlocks, 0l);
+			float[][] subMatrix = loom.readFloatBlock(Parameters.iAnnot, blockSize[0], (int)dim[1], nbBlocks, 0l);
 			
 			// Parsing Data and generating summary annotations
 			for(int x = 0; x < subMatrix.length; x++)
 			{
 				int i = x + nbBlocks * blockSize[0]; // Original index of gene
-				
+								
 				// Prepare array
 	        	double[] array1 = new double[listIndexes1.size()];
 	        	double[] array2 = new double[listIndexes2.size()];
@@ -342,26 +343,18 @@ public class DE
 	        	}
 	        	else
 	        	{
-	        		for(int j = 0; j < listIndexes1.size(); j++) array1[j] = subMatrix[x][listIndexes1.get(j)]; // No normalization
-	        		for(int j = 0; j < listIndexes2.size(); j++) array2[j] = subMatrix[x][listIndexes2.get(j)]; // No normalization
+	        		// Assuming it's ln (default seurat normalization)
+	        		for(int j = 0; j < listIndexes1.size(); j++) array1[j] = Math.exp(subMatrix[x][listIndexes1.get(j)]) - 1; // No normalization
+	        		for(int j = 0; j < listIndexes2.size(); j++) array2[j] = Math.exp(subMatrix[x][listIndexes2.get(j)]) - 1; // No normalization
 	        	}
 	        	        	
-	        	// Update results for this gene
 	        	double mean1 = Utils.mean(array1);
 	        	double mean2 = Utils.mean(array2);
-	        	if(Parameters.isCountMatrix) 
-	        	{
-	        		results[0][i] = (float)(Utils.log2(1 + mean1) - Utils.log2(1 + mean2));
-	        	   	results[1][i] = (float)test.mannWhitneyUTest(Utils.log2p(array1), Utils.log2p(array2)); // This one does not give exactly the same results as R, but is muchhhhhh faster than the JSC on
-	        	}
-	        	else
-	        	{
-	        		results[0][i] = (float)(mean1 - mean2); // TODO If it's not log2... it's stupid...
-	        		results[1][i] = (float)test.mannWhitneyUTest(array1, array2); // This one does not give exactly the same results as R, but is muchhhhhh faster than the JSC on				
-	        	}
+	        	// Update results for this gene
+	        	results[0][i] = (float)(Utils.log2(1 + mean1) - Utils.log2(1 + mean2));
+	        	results[1][i] = (float)test.mannWhitneyUTest(Utils.log2p(array1), Utils.log2p(array2)); // This one does not give exactly the same results as R, but is muchhhhhh faster than the JSC on
 	        	results[3][i] = (float)mean1;
 	        	results[4][i] = (float)mean2;
-				
 				nber_genes++;
 			}
 		}
