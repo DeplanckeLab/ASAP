@@ -291,7 +291,7 @@ public class ASAP
 				long nbGenes = dim[0];
 				long nbCells = dim[1];
 				boolean toNormalize = false;
-				if(Parameters.iAnnot == null) { toNormalize = true; Parameters.iAnnot = "/matrix"; }
+				if(Parameters.iAnnot == null || Parameters.iAnnot.equals("/matrix")) { toNormalize = true; Parameters.iAnnot = "/matrix"; }
 				dim = loom.getDimensions(Parameters.iAnnot); // dim[1] = nb of values to extract for each row
 				if(dim[0] != nbGenes && dim[1] != nbCells) { loom.close(); new ErrorJSON("You cannot use GetGeneStats on this dataset: " + Parameters.iAnnot); }
 				
@@ -329,13 +329,11 @@ public class ASAP
 						// Read the gene expressions
 						float[] row = loom.readRow(index, Parameters.iAnnot); // TODO handle multiple read in same block
 						
-						// In case we need to normalize (by column)
-						if(toNormalize)
+						// Handle normalization
+						for (int j = 0; j < row.length; j++) 
 						{
-							for (int j = 0; j < row.length; j++) 
-							{
-								row[j] = (float)(row[j] / depth.get(j)) * Parameters.scale_factor;
-							}
+							if(toNormalize) row[j] = (float)(row[j] / depth.get(j)) * Parameters.scale_factor;
+							else row[j] = (float)Math.exp(row[j]) - 1;
 						}
 						
 						// In case some cells are filtered
@@ -367,7 +365,7 @@ public class ASAP
 							res.q1 = Utils.q1(filtered_row, true);
 							res.q3 = Utils.q3(filtered_row, true);
 							res.max = filtered_row[filtered_row.length - 1];
-							if(toNormalize) res.log2p(); // log2(1 + x) if normalized on-the-go (AFTER computing the mean)
+							//if(toNormalize) res.log2p(); // log2(1 + x) if normalized on-the-go (AFTER computing the mean)
 							results[i] = res;
 							
 							// 2. Complementary cells
@@ -391,7 +389,7 @@ public class ASAP
 							res.q1 = Utils.q1(filtered_row, true);
 							res.q3 = Utils.q3(filtered_row, true);
 							res.max = filtered_row[filtered_row.length - 1];
-							if(toNormalize) res.log2p(); // log2(1 + x) if normalized on-the-go (AFTER computing the mean)						
+							//if(toNormalize) res.log2p(); // log2(1 + x) if normalized on-the-go (AFTER computing the mean)						
 							results_comp[i] = res;
 						}
 						else
@@ -405,7 +403,7 @@ public class ASAP
 							res.q1 = Utils.q1(row, true);
 							res.q3 = Utils.q3(row, true);
 							res.max = row[row.length - 1];
-							if(toNormalize) res.log2p(); // log2(1 + x) if normalized on-the-go (AFTER computing the mean)
+							//if(toNormalize) res.log2p(); // log2(1 + x) if normalized on-the-go (AFTER computing the mean)
 							results[i] = res;
 							results_comp[i] = null; // No cell filtering
 						}
