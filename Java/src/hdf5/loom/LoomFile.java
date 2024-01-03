@@ -1107,6 +1107,18 @@ public class LoomFile
 		((IHDF5Writer)this.handle).string().write(path, value);
 	}
 	
+	public void writeMatrixMetadata(String path, double[][] data)
+    {
+		writeDoubleMatrix(path, data);
+    }
+	
+	public void writeDoubleMatrix(String path, double[][] data)
+    {
+		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
+		if(this.readOnly) new ErrorJSON("Cannot write in readOnly matrix");
+		((IHDF5Writer)this.handle).float64().writeMatrix(path, data);
+    }
+	
 	public void writeMatrixMetadata(String path, float[][] data)
     {
 		writeFloatMatrix(path, data);

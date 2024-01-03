@@ -278,7 +278,7 @@ public class DE
 		int[] blockSize = loom.getChunkSizes();
     	
     	// Prepare final results
-		float[][] results = new float[5][(int)dim[0]]; // 0 logFC", 1 "pval", 2 "FDR", 3 "AveG1", 4 "AveG2"
+		double[][] results = new double[5][(int)dim[0]]; // 0 logFC", 1 "pval", 2 "FDR", 3 "AveG1", 4 "AveG2"
 		
     	// Handle the case where g2 is complementary group
     	if(Parameters.group_2 == null)
@@ -351,10 +351,11 @@ public class DE
 	        	double mean1 = Utils.mean(array1);
 	        	double mean2 = Utils.mean(array2);
 	        	// Update results for this gene
-	        	results[0][i] = (float)(Utils.log2(1 + mean1) - Utils.log2(1 + mean2));
-	        	results[1][i] = (float)test.mannWhitneyUTest(Utils.log2p(array1), Utils.log2p(array2)); // This one does not give exactly the same results as R, but is muchhhhhh faster than the JSC on
-	        	results[3][i] = (float)mean1;
-	        	results[4][i] = (float)mean2;
+	        	results[0][i] = Utils.log2(1 + mean1) - Utils.log2(1 + mean2);
+	        	results[1][i] = test.mannWhitneyUTest(Utils.log2p(array1), Utils.log2p(array2)); // This one does not give exactly the same results as R, but is muchhhhhh faster than the JSC on
+	        	results[3][i] = mean1;
+	        	results[4][i] = mean2;
+	        			        	
 				nber_genes++;
 			}
 		}
@@ -363,7 +364,7 @@ public class DE
 		loom.close();
 		
 		// FDR calculation
-		results[2] = Utils.p_adjust_F(results[1], "fdr");
+		results[2] = Utils.p_adjust(results[1], "fdr");
 		
 		// Check how many are significant
 		int pos_signif = 0;
