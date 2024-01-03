@@ -462,13 +462,13 @@ public class LoomFile
 					{
 						if(checkCategories)
 						{
-							float[][] values = readFloatMatrix(path);
+							double[][] values = readDoubleMatrix(path);
 							out.matrixValues = new String[values.length][values[0].length];
 							for (int i = 0; i < out.matrixValues.length; i++)
 							{
 								for (int j = 0; j < out.matrixValues[i].length; j++) 
 								{
-									float v = values[i][j];
+									double v = values[i][j];
 									String vs = "" + v;
 									out.categories.add(vs); // Checking if not discrete
 									Long count = out.categoriesMap.get(vs);
@@ -883,6 +883,13 @@ public class LoomFile
 	{
 		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
 		float[][] res = this.handle.float32().readMatrix(path); // TODO does not work if too big array
+		return res;
+	}
+	
+	public double[][] readDoubleMatrix(String path)
+	{
+		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
+		double[][] res = this.handle.float64().readMatrix(path); // TODO does not work if too big array
 		return res;
 	}
 	
