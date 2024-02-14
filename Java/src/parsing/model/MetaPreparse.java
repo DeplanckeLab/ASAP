@@ -2,7 +2,7 @@ package parsing.model;
 
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
+import java.util.Set;
 
 import bigarrays.StringArray64;
 import model.Metadata;
@@ -13,7 +13,7 @@ public class MetaPreparse
 	public StringArray64 cellNames;
 	public Gene[] geneNames;
 	public HashMap<String, Integer> cellMap;
-	public HashMap<String, List<Integer>> geneMap;
+	public HashMap<String, Set<Integer>> geneMap;
 	public HashSet<String> not_found;
 	public HashSet<String> ambiguous;
 	public HashMap<Integer, Metadata> metaIndex;

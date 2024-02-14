@@ -18,8 +18,8 @@ import json.ErrorJSON;
 import model.GeneSet;
 import model.Parameters;
 import tools.FisherExactTest_2X2;
-import tools.Utils;
 import tools.FisherExactTest_2X2.Alternative;
+import tools.Utils;
 
 public class Enrichment 
 {
@@ -40,7 +40,7 @@ public class Enrichment
 		HashSet<Long> genesInGenesets = new HashSet<Long>();
 		for(GeneSet g:genesets) for(long gene:g.content) genesInGenesets.add(gene);
 		//System.out.println(genesInGenesets.size() + " unique genes in selected geneset");
-		
+			
     	// Open Loom file in read-only
     	LoomFile loom = new LoomFile("r", Parameters.loomFile);
     	StringArray64 ens_ids = loom.readStringArray("/row_attrs/Accession");
@@ -54,7 +54,7 @@ public class Enrichment
 			Long id = genes.get(ens);
 			if(id != null && genesInGenesets.contains(id)) dbIDByEnsemblId.put(ens, id);
 		}
-    	
+		
 		//System.out.println(dbIDByEnsemblId.size() + " unique genes left after overlap with background + Loom file (by EnsemblIds)");
 		if(dbIDByEnsemblId.size() == 0) new ErrorJSON("No gene in the Loom file matches Ensembl Ids in the database. Nothing to enrich.", Parameters.JSONFileName);
 		
@@ -293,6 +293,7 @@ public class Enrichment
 					gRes.description = g.name;
 					int overlap = 0;
 					int genesetSize = 0;
+									
 					for(long gene:g.content) 
 					{
 						if(background.contains(gene))

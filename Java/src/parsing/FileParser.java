@@ -10,7 +10,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
+import java.util.Set;
 
 import bigarrays.StringArray64;
 import compression.CompressionHandler;
@@ -191,8 +191,8 @@ public class FileParser
 					tokens = gene.name.split(",");
 					for(String t:tokens) 
 					{
-						List<Integer> list = g.geneMap.get(t);
-						if(list == null) list = new ArrayList<Integer>();
+						Set<Integer> list = g.geneMap.get(t);
+						if(list == null) list = new HashSet<Integer>();
 						list.add(i);
 						g.geneMap.put(t, list); // For faster comparison
 					}
@@ -202,8 +202,8 @@ public class FileParser
 					tokens = gene.ensembl_id.split(",");
 					for(String t:tokens) 
 					{
-						List<Integer> list = g.geneMap.get(t);
-						if(list == null) list = new ArrayList<Integer>();
+						Set<Integer> list = g.geneMap.get(t);
+						if(list == null) list = new HashSet<Integer>();
 						list.add(i);
 						g.geneMap.put(t, list); // For faster comparison
 					}
@@ -342,10 +342,10 @@ public class FileParser
     				}
     				else // GENES
     				{
-		    			List<Integer> indexes = g.geneMap.get(name);
+		    			Set<Integer> indexes = g.geneMap.get(name);
 		    			if(indexes != null) // If not found => discarded
 		    			{
-		    				if(indexes.size() == 1) m.values.set(indexes.get(0), value);
+		    				if(indexes.size() == 1) m.values.set(indexes.iterator().next(), value);
 			    			else if(!Parameters.removeAmbiguous) // In case this option is selected
 			    			{
 			    				for(Integer k:indexes) m.values.set(k, value); // Add for each gene
@@ -495,8 +495,8 @@ public class FileParser
 					tokens = gene.name.split(",");
 					for(String t:tokens) 
 					{
-						List<Integer> list = g.geneMap.get(t);
-						if(list == null) list = new ArrayList<Integer>();
+						Set<Integer> list = g.geneMap.get(t);
+						if(list == null) list = new HashSet<Integer>();
 						list.add(i);
 						g.geneMap.put(t, list); // For faster comparison
 					}
@@ -506,8 +506,8 @@ public class FileParser
 					tokens = gene.ensembl_id.split(",");
 					for(String t:tokens) 
 					{
-						List<Integer> list = g.geneMap.get(t);
-						if(list == null) list = new ArrayList<Integer>();
+						Set<Integer> list = g.geneMap.get(t);
+						if(list == null) list = new HashSet<Integer>();
 						list.add(i);
 						g.geneMap.put(t, list); // For faster comparison
 					}
@@ -624,18 +624,33 @@ public class FileParser
     				{
 		    			Integer index = g.cellMap.get(name);
 		    			if(index == null) g.not_found.add(name);
-		    			else m.values.set(index, value);
+		    			else 
+		    			{
+		    				String precedent_value = m.values.get(index);
+		    				if(!precedent_value.equals("")) new ErrorJSON("The file contains duplicated cell names. E.g. (l. " +  ( l + 2 ) + "): " + name);
+		    				m.values.set(index, value);
+		    			}
     				}
     				else
     				{
-		    			List<Integer> indexes = g.geneMap.get(name);
+		    			Set<Integer> indexes = g.geneMap.get(name);
 		    			if(indexes == null) g.not_found.add(name);
-		    			else if(indexes.size() == 1) m.values.set(indexes.get(0), value);
+		    			else if(indexes.size() == 1)
+		    			{
+		    				String precedent_value = m.values.get(indexes.iterator().next());
+		    				if(!precedent_value.equals("")) new ErrorJSON("The file contains duplicated gene names. E.g. (l. " + ( l + 2 ) + "): " + name);
+		    				m.values.set(indexes.iterator().next(), value);
+		    			}
 		    			else 
 		    			{
 		    				g.ambiguous.add(name);
 		    				// For now, I fill them all
-		    				for(int idx:indexes) m.values.set(idx, value);
+		    				for(int idx:indexes) 
+		    				{
+			    				String precedent_value = m.values.get(idx);
+			    				if(!precedent_value.equals("")) new ErrorJSON("The file contains duplicated gene names. E.g. (l. " +  ( l + 2 ) + "): " + name);
+			    				m.values.set(idx, value);
+		    				}
 		    			}
     				}
     			}
