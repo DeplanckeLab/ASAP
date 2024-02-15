@@ -532,7 +532,7 @@ public class FileParser
     		String[] header = tokens;
     		line = br.readLine();
     		tokens = line.split(Parameters.delimiter, -1); // limit = -1 to keep trailing empty string
-    		if(header.length != tokens.length && header.length - 1 != tokens.length) new ErrorJSON("Header size (" + header.length +  ") does not match first line size (" + tokens.length + ").");
+    		if(header.length != tokens.length && header.length - 1 != tokens.length) new ErrorJSON("Header size (" + header.length +  ") does not match first line size (" + tokens.length + ").", Parameters.outputFile);
     		
     		// First, need to read header for metadata names. Thus, search for header names
     		endI = header.length;
@@ -545,7 +545,7 @@ public class FileParser
     				if(header.length == tokens.length) endI = header.length - 1;
     				break;
     			case NONE:
-    				if(header.length != tokens.length) new ErrorJSON("Header size (" + header.length +  ") does not match first line size (" + tokens.length + ").");
+    				if(header.length != tokens.length) new ErrorJSON("Header size (" + header.length +  ") does not match first line size (" + tokens.length + ").", Parameters.outputFile);
     		}
     		
     		// Create a Metadata object for each header, except for the Gene/Cell Name
@@ -627,7 +627,7 @@ public class FileParser
 		    			else 
 		    			{
 		    				String precedent_value = m.values.get(index);
-		    				if(!precedent_value.equals("")) new ErrorJSON("The file contains duplicated cell names. E.g. (l. " +  ( l + 2 ) + "): " + name);
+		    				if(!precedent_value.equals("")) new ErrorJSON("The file contains duplicated cell names. E.g. (l. " +  ( l + 2 ) + "): " + name, Parameters.outputFile);
 		    				m.values.set(index, value);
 		    			}
     				}
@@ -638,7 +638,7 @@ public class FileParser
 		    			else if(indexes.size() == 1)
 		    			{
 		    				String precedent_value = m.values.get(indexes.iterator().next());
-		    				if(!precedent_value.equals("")) new ErrorJSON("The file contains duplicated gene names. E.g. (l. " + ( l + 2 ) + "): " + name);
+		    				if(!precedent_value.equals("")) new ErrorJSON("The file contains duplicated gene names. E.g. (l. " + ( l + 2 ) + "): " + name, Parameters.outputFile);
 		    				m.values.set(indexes.iterator().next(), value);
 		    			}
 		    			else 
@@ -648,7 +648,7 @@ public class FileParser
 		    				for(int idx:indexes) 
 		    				{
 			    				String precedent_value = m.values.get(idx);
-			    				if(!precedent_value.equals("")) new ErrorJSON("The file contains duplicated gene names. E.g. (l. " +  ( l + 2 ) + "): " + name);
+			    				if(!precedent_value.equals("")) new ErrorJSON("The file contains duplicated gene names. E.g. (l. " +  ( l + 2 ) + "): " + name, Parameters.outputFile);
 			    				m.values.set(idx, value);
 		    				}
 		    			}

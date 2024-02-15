@@ -1254,20 +1254,20 @@ public class Parameters
 						{
 							loomFile = args[i].replaceAll("\\\\", "/");
 							File c = new File(loomFile);
-							if(!c.exists()) new ErrorJSON("No file at path " + loomFile);
-							if(!c.isFile()) new ErrorJSON(loomFile + " is not a file");
+							if(!c.exists()) new ErrorJSON("No file at path " + loomFile, outputFile);
+							if(!c.isFile()) new ErrorJSON(loomFile + " is not a file", outputFile);
 						}
 						catch(Exception e)
 						{
-							new ErrorJSON("The '-loom' option should be followed by Loom file path. " + e.getMessage() + ". You entered " + args[i]);
+							new ErrorJSON("The '-loom' option should be followed by Loom file path. " + e.getMessage() + ". You entered " + args[i], outputFile);
 						}
 						break;
 					case "-metaJSON":
 						i++;
 						JSONFileName = args[i];
 						JSONFileName = JSONFileName.replaceAll("\\\\", "/");
-						if(new File(JSONFileName).isDirectory()) new ErrorJSON("'-metaJSON' should be followed by a JSON file containing metadata path in the Loom. Here it is a folder name!");
-						if(!new File(JSONFileName).exists()) new ErrorJSON("'-metaJSON' should be followed by a JSON file containing metadata path in the Loom. Here, the file does not exist!");
+						if(new File(JSONFileName).isDirectory()) new ErrorJSON("'-metaJSON' should be followed by a JSON file containing metadata path in the Loom. Here it is a folder name!", outputFile);
+						if(!new File(JSONFileName).exists()) new ErrorJSON("'-metaJSON' should be followed by a JSON file containing metadata path in the Loom. Here, the file does not exist!", outputFile);
 						break;
 					case "-meta":
 						i++;
