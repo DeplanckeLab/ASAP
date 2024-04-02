@@ -13,6 +13,7 @@ import bigarrays.FloatArray64;
 import bigarrays.IntArray64;
 import bigarrays.LongArray64;
 import bigarrays.StringArray64;
+import ch.systemsx.cisd.base.mdarray.MDArray;
 import ch.systemsx.cisd.hdf5.HDF5DataClass;
 import ch.systemsx.cisd.hdf5.HDF5DataSetInformation;
 import ch.systemsx.cisd.hdf5.HDF5DataTypeInformation;
@@ -584,7 +585,27 @@ public class LoomFile
 				}
 				else if(dim.length > 1 && dim[1] > 0) // Matrix
 				{
-					new ErrorJSON("A 2D array of STRING is not allowed");
+					if(dim[1] == 1)
+					{
+						// It's an array stored in a Matrix
+						if(checkCategories)
+						{
+							out.values = new StringArray64(readStringArrayInMatrix(path));
+							for (long i = 0; i < out.values.size(); i++)
+							{
+								String v = out.values.get(i);
+								v = Utils.handleSpecialCharacters(v);
+								out.categories.add(v); // Still checking if not discrete
+								Long count = out.categoriesMap.get(v);
+								if(count == null) count = 0L;
+								out.categoriesMap.put(v, count + 1);
+							}
+							out.stringWasCorrected = true;
+							if(out.isCategorical()) out.type = Metatype.DISCRETE;
+							else out.categories = null;
+						}
+					}
+					else new ErrorJSON("A 2D array of STRING is not allowed");
 				}
 				else // Vector
 				{
@@ -919,6 +940,14 @@ public class LoomFile
 		int nbChunks = (int)(length / StringArray64.chunkSize()) + 1;
 		for(int i = 0; i < nbChunks; i++) res.set(i, this.handle.string().readArrayBlock(path, StringArray64.chunkSize(), i));
 		return res;
+	}
+	
+	public String[] readStringArrayInMatrix(String path)
+	{
+		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
+		if(!this.handle.object().exists(path)) new ErrorJSON("Dataset '"+path+"' does not exist");
+		MDArray<String> array = this.handle.string().readMDArray(path);
+		return array.getAsFlatArray();
 	}
 	
 	public String readString(String path)
@@ -2002,7 +2031,54 @@ public class LoomFile
 				}
 				else if(dim.length > 1 && dim[1] > 0) // Matrix
 				{
-					new ErrorJSON("Cannot create a 2D array of STRING");
+					if(dim[1] == 1)
+					{
+						// It's an array stored in a Matrix
+						StringArray64 values = new StringArray64(from.readStringArrayInMatrix(m.path));
+						m.nbrow = values.size() - toFilterCells.size();
+						m.nbcol = values.size() - toFilterGenes.size(); // We don't really change the nb of cols. Just for ASAP.
+						
+						if(m.on == MetaOn.CELL)
+						{
+							if(toFilterCells.isEmpty()) to.writeStringArray(m.path, values);
+							else
+							{
+								StringArray64 towrite = new StringArray64(values.size() - toFilterCells.size());
+								long k = 0;
+								for (long i = 0; i < values.size(); i++) 
+								{
+									if(!toFilterCells.contains(i))
+									{
+										towrite.set(k, values.get(i));
+										k++;
+									}
+								}
+								to.writeStringArray(m.path, towrite);
+								m.size = to.getSizeInBytes(m.path);
+							}
+						}
+											
+						if(m.on == MetaOn.GENE)
+						{
+							if(toFilterGenes.isEmpty()) to.writeStringArray(m.path, values);
+							else
+							{
+								StringArray64 towrite = new StringArray64(values.size() - toFilterGenes.size());
+								long k = 0;
+								for (long i = 0; i < values.size(); i++) 
+								{
+									if(!toFilterGenes.contains(i))
+									{
+										towrite.set(k, values.get(i));
+										k++;
+									}
+								}
+								to.writeStringArray(m.path, towrite);
+								m.size = to.getSizeInBytes(m.path);
+							}
+						}
+					}
+					else new ErrorJSON("Cannot create a 2D array of STRING");
 				}
 				else // Vector
 				{

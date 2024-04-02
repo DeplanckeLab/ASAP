@@ -295,7 +295,23 @@ public class H5ADHandler
 				}
 				else if(dim.length > 1 && dim[1] > 0) // Matrix
 				{
-					new ErrorJSON("Cannot create a 2D array of STRING");
+					if(dim[1] == 1)
+					{
+						// It's an array stored in a Matrix
+						String[] values = reader.string().readMDArray(m.path).getAsFlatArray();
+						if(codes != null)
+						{
+							// CATEGORICAL
+							String[] modified_values = new String[codes.length];
+							for(int i = 0; i < modified_values.length; i++) modified_values[i] = values[codes[i]];
+							m.categories = new HashSet<String>();
+							for(String v:values) m.categories.add(v);
+							values = modified_values;
+						}
+						json.loom.writeStringArray(output_path, values);
+						m.size = json.loom.getSizeInBytes(output_path);
+					}
+					else new ErrorJSON("Cannot create a 2D array of STRING");
 				}
 				else // Vector
 				{
