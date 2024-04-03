@@ -14,6 +14,9 @@ import bigarrays.IntArray64;
 import bigarrays.LongArray64;
 import bigarrays.StringArray64;
 import ch.systemsx.cisd.base.mdarray.MDArray;
+import ch.systemsx.cisd.base.mdarray.MDDoubleArray;
+import ch.systemsx.cisd.base.mdarray.MDFloatArray;
+import ch.systemsx.cisd.base.mdarray.MDIntArray;
 import ch.systemsx.cisd.hdf5.HDF5DataClass;
 import ch.systemsx.cisd.hdf5.HDF5DataSetInformation;
 import ch.systemsx.cisd.hdf5.HDF5DataTypeInformation;
@@ -461,25 +464,49 @@ public class LoomFile
 				{
 					if(out.on != MetaOn.EXPRESSION_MATRIX)
 					{
-						if(checkCategories)
+						if(dim[1] == 1)
 						{
-							double[][] values = readDoubleMatrix(path);
-							out.matrixValues = new String[values.length][values[0].length];
-							for (int i = 0; i < out.matrixValues.length; i++)
+							// It's an array stored in a Matrix
+							if(checkCategories)
 							{
-								for (int j = 0; j < out.matrixValues[i].length; j++) 
+								FloatArray64 values = new FloatArray64(readFloatArrayInMatrix(path));
+								out.values = new StringArray64(values.size());
+								for (long i = 0; i < out.values.size(); i++)
 								{
-									double v = values[i][j];
+									float v = values.get(i);
 									String vs = "" + v;
 									out.categories.add(vs); // Checking if not discrete
 									Long count = out.categoriesMap.get(vs);
 									if(count == null) count = 0L;
 									out.categoriesMap.put(vs, count + 1);
-									out.matrixValues[i][j] =  vs;
+									out.values.set(i, vs);
 								}
+								if(out.isCategorical()) out.type = Metatype.DISCRETE;
+								else out.categories = null;
 							}
-							if(out.isCategorical(values.length * values[0].length)) out.type = Metatype.DISCRETE;
-							else out.categories = null;
+						}
+						else 
+						{	
+							if(checkCategories)
+							{
+								double[][] values = readDoubleMatrix(path);
+								out.matrixValues = new String[values.length][values[0].length];
+								for (int i = 0; i < out.matrixValues.length; i++)
+								{
+									for (int j = 0; j < out.matrixValues[i].length; j++) 
+									{
+										double v = values[i][j];
+										String vs = "" + v;
+										out.categories.add(vs); // Checking if not discrete
+										Long count = out.categoriesMap.get(vs);
+										if(count == null) count = 0L;
+										out.categoriesMap.put(vs, count + 1);
+										out.matrixValues[i][j] =  vs;
+									}
+								}
+								if(out.isCategorical(values.length * values[0].length)) out.type = Metatype.DISCRETE;
+								else out.categories = null;
+							}
 						}
 					}
 					else
@@ -523,25 +550,49 @@ public class LoomFile
 				{
 					if(out.on != MetaOn.EXPRESSION_MATRIX)
 					{
-						if(checkCategories)
+						if(dim[1] == 1)
 						{
-							int[][] values = readIntMatrix(path);
-							out.matrixValues = new String[values.length][values[0].length];
-							for (int i = 0; i < out.matrixValues.length; i++)
+							// It's an array stored in a Matrix
+							if(checkCategories)
 							{
-								for (int j = 0; j < out.matrixValues[i].length; j++) 
+								IntArray64 values = new IntArray64(readIntArrayInMatrix(path));
+								out.values = new StringArray64(values.size());
+								for (long i = 0; i < out.values.size(); i++)
 								{
-									int v = values[i][j];
+									int v = values.get(i);
 									String vs = "" + v;
 									out.categories.add(vs); // Checking if not discrete
 									Long count = out.categoriesMap.get(vs);
 									if(count == null) count = 0L;
 									out.categoriesMap.put(vs, count + 1);
-									out.matrixValues[i][j] =  vs;
+									out.values.set(i, vs);
 								}
+								if(out.isCategorical()) out.type = Metatype.DISCRETE;
+								else out.categories = null;
 							}
-							if(out.isCategorical(values.length * values[0].length)) out.type = Metatype.DISCRETE;
-							else out.categories = null;
+						}
+						else 
+						{				
+							if(checkCategories)
+							{
+								int[][] values = readIntMatrix(path);
+								out.matrixValues = new String[values.length][values[0].length];
+								for (int i = 0; i < out.matrixValues.length; i++)
+								{
+									for (int j = 0; j < out.matrixValues[i].length; j++) 
+									{
+										int v = values[i][j];
+										String vs = "" + v;
+										out.categories.add(vs); // Checking if not discrete
+										Long count = out.categoriesMap.get(vs);
+										if(count == null) count = 0L;
+										out.categoriesMap.put(vs, count + 1);
+										out.matrixValues[i][j] =  vs;
+									}
+								}
+								if(out.isCategorical(values.length * values[0].length)) out.type = Metatype.DISCRETE;
+								else out.categories = null;
+							}
 						}
 					}
 					else
@@ -907,11 +958,25 @@ public class LoomFile
 		return res;
 	}
 	
+	public float[] readFloatArrayInMatrix(String path)
+	{
+		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
+		MDFloatArray array = this.handle.float32().readMDArray(path);
+		return array.getAsFlatArray();
+	}
+	
 	public double[][] readDoubleMatrix(String path)
 	{
 		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
 		double[][] res = this.handle.float64().readMatrix(path); // TODO does not work if too big array
 		return res;
+	}
+	
+	public double[] readDoubleArrayInMatrix(String path)
+	{
+		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
+		MDDoubleArray array = this.handle.float64().readMDArray(path);
+		return array.getAsFlatArray();
 	}
 	
 	public IntArray64 readIntArray(String path)
@@ -929,6 +994,13 @@ public class LoomFile
 		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
 		int[][] res = this.handle.int32().readMatrix(path); // TODO does not work if too big array
 		return res;
+	}
+	
+	public int[] readIntArrayInMatrix(String path)
+	{
+		if(this.handle == null) new ErrorJSON("Please open the Loom file first");
+		MDIntArray array = this.handle.int32().readMDArray(path);
+		return array.getAsFlatArray();
 	}
 	
 	public StringArray64 readStringArray(String path)

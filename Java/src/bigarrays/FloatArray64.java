@@ -13,6 +13,17 @@ public class FloatArray64
     private long size;
     private float[][] data;
 
+    public FloatArray64(float[] array) // TODO remove this
+    {
+        this.size = array.length;
+        if(size == 0) data = null;
+        else 
+        {
+            data = new float[1][array.length];
+            data[0] = array;
+        }
+    }
+    
     public FloatArray64(long size)
     {
         this.size = size;

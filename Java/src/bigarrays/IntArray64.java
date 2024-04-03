@@ -13,6 +13,17 @@ public class IntArray64
     private long size;
     private int[][] data;
 
+    public IntArray64(int[] array) // TODO remove this
+    {
+        this.size = array.length;
+        if(size == 0) data = null;
+        else 
+        {
+            data = new int[1][array.length];
+            data[0] = array;
+        }
+    }
+    
     public IntArray64(long size)
     {
         this.size = size;
